@@ -14,10 +14,10 @@ numpy_to_gdal = {
     np.dtype(np.uint8): 1,
 }
 
-class ObservationMetadata:
+class GenericGeoMetadata:
     def __init__(self, band_names, geotransform=None, projection=None, glt=None, pre_orthod=False, nodata_value=None):
         """
-        Initializes the ObservationMetadata object.
+        Initializes the GenericGeoMetadata object.
 
         Args:
             band_names (list): List of band names.
@@ -27,7 +27,7 @@ class ObservationMetadata:
             pre_orthod (bool, optional): Whether the data is already orthod. Defaults to False.
             nodata_value (int, optional): The nodata value. Defaults to None.
         """
-        self.obs_names = band_names
+        self.band_names = band_names
         self.geotransform = geotransform
         self.projection = projection
         self.glt = glt
@@ -90,7 +90,7 @@ class SpectralMetadata:
             return np.where(np.logical_and(self.wl >= wl - buffer, self.wl <= wl + buffer))
 
 
-def load_data(input_file, lazy=True, load_glt=False):
+def load_data(input_file, lazy=True, load_glt=False, load_loc=False):
     """
     Loads a file and extracts the spectral metadata and data.
 
@@ -110,17 +110,20 @@ def load_data(input_file, lazy=True, load_glt=False):
     if input_file.endswith(('.hdr', '.dat', '.img')) or '.' not in os.path.basename(input_file):
         return open_envi(input_file, lazy=True)
     elif input_file.endswith('.nc'):
-        return open_netcdf(input_file, lazy=True, load_glt=load_glt)
+        return open_netcdf(input_file, lazy=True, load_glt=load_glt, load_loc=load_loc)
+    elif input_file.endswith('.tif'):
+        return open_tif(input_file, lazy=True)
     else:
         raise ValueError(f'Unknown file type for {input_file}')
 
-def ortho_data(data, glt, glt_nodata=0, nodata_value=-9999):
+def ortho_data(data, glt, glt_mask=None, glt_nodata=0, nodata_value=-9999):
     """
     Orthorectifies the data using the provided ground control points.
 
     Args:
         data (numpy.ndarray): The spectral data to orthorectify, with shape (rows, cols, bands).
         glt (numpy.ndarray, optional): 3d array of x and y indices. Defaults to None. Negatives assumed as interpolation values.
+        glt_mask (numpy.ndarray, optional): A mask to apply to the glt. Defaults to None.
         glt_nodata (int, optional): The nodata value for the glt. Defaults to 0.
         nodata_value (int, optional): The nodata value to fill in the background with.
 
@@ -129,6 +132,9 @@ def ortho_data(data, glt, glt_nodata=0, nodata_value=-9999):
     """
     outdata = np.zeros((glt.shape[0], glt.shape[1], data.shape[2]), dtype=data.dtype) + nodata_value
     valid_glt = np.all(glt != glt_nodata, axis=-1)
+    if glt_mask is not None:
+        valid_glt = np.logical_and(valid_glt, glt_mask)
+
     if glt_nodata == 0:
         glt[valid_glt] -= 1
     outdata[valid_glt, :] = data[np.abs(glt[valid_glt, 1]), np.abs(glt[valid_glt, 0]), :]
@@ -164,6 +170,8 @@ def write_cog(output_file, data, meta, ortho=True, nodata_value=-9999):
     for i in range(od.shape[2]):
         ds.GetRasterBand(i+1).WriteArray(od[:, :, i])
         ds.GetRasterBand(i+1).SetNoDataValue(nodata_value)
+        #if meta.band_names is not None:
+        #    ds.GetRasterBand(i+1).SetDescription(meta.band_names[i])
     ds.BuildOverviews('NEAREST', [2, 4, 8, 16, 32, 64, 128])
     
     tiff_driver = gdal.GetDriverByName('GTiff')
@@ -217,7 +225,36 @@ def open_envi(input_file, lazy=True):
     return meta, rfl
     
 
-def open_netcdf(input_file, lazy=True, load_glt=False):
+def open_tif(input_file, lazy=False):
+    """
+    Opens a GeoTIFF file and extracts the spectral metadata and data.
+
+    Args:
+        input_file (str): Path to the GeoTIFF file.
+        lazy (bool, optional): If True, loads the data lazily. Defaults to True.
+
+    Returns:
+        tuple: A tuple containing:
+            - GenericGeoMetadata: An object containing the wavelengths and FWHM.
+            - numpy.ndarray: The data, either as a lazy-loaded memory map or a fully loaded numpy array.
+    """
+    logging.warning('Lazy loading not supported for GeoTIFF data.')
+    from osgeo import gdal
+    ds = gdal.Open(input_file)
+    proj = ds.GetProjection()
+    trans = ds.GetGeoTransform()
+    band_names = [ds.GetRasterBand(i+1).GetDescription() for i in range(ds.RasterCount)]
+    nodata_value = ds.GetRasterBand(1).GetNoDataValue()
+    meta = GenericGeoMetadata(band_names, geotransform=trans, projection=proj, pre_orthod=True, nodata_value=nodata_value)
+    data = ds.ReadAsArray()
+    if len(data.shape) == 3:
+        data = np.transpose(data, (1, 2, 0))
+    if len(data.shape) == 2:
+        data = np.expand_dims(data, axis=-1)
+    return meta, data
+
+
+def open_netcdf(input_file, lazy=True, load_glt=False, load_loc=False):
     """
     Opens a NetCDF file and extracts the metadata and data.
 
@@ -235,7 +272,11 @@ def open_netcdf(input_file, lazy=True, load_glt=False):
         return open_emit_rdn(input_file, lazy=lazy, load_glt=load_glt)
     elif 'AV3' in input_file and 'RFL' in input_file:
         return open_airborne_rfl(input_file, lazy=lazy)
-    elif ('ang' in input_file or 'ANG' in input_file) and 'RFL' in input_file:
+    elif 'AV3' in input_file and 'RDN' in input_file:
+        return open_airborne_rdn(input_file, lazy=lazy)
+    elif ('av3' in input_file.lower() or 'ang' in input_file.lower()) and 'OBS' in input_file:
+        return open_airborne_obs(input_file, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
+    elif 'ang' in input_file.lowwer()  and 'RFL' in input_file.lower():
         return open_airborne_rfl(input_file, lazy=lazy)
     elif 'AV3' in input_file and 'OBS' in input_file:
         return open_airborne_obs(input_file, lazy=lazy, load_glt=load_glt)
@@ -280,16 +321,16 @@ def open_emit_rdn(input_file, lazy=True, load_glt=False):
 
 def open_airborne_rfl(input_file, lazy=True):
     """
-    Opens an Airborne radiance NetCDF file and extracts the spectral metadata and radiance data.
+    Opens an Airborne reflectance NetCDF file and extracts the spectral metadata and radiance data.
 
     Args:
         input_file (str): Path to the NetCDF file.
-        lazy (bool, optional): If True, loads the radiance data lazily. Defaults to True.
+        lazy (bool, optional): If True, loads the reflectance data lazily. Defaults to True.
 
     Returns:
         tuple: A tuple containing:
             - SpectralMetadata: An object containing the wavelengths and FWHM.
-            - numpy.ndarray or netCDF4.Variable: The radiance data, either as a lazy-loaded variable or a fully loaded numpy array.
+            - numpy.ndarray or netCDF4.Variable: The reflectance data, either as a lazy-loaded variable or a fully loaded numpy array.
     """
     ds = nc.Dataset(input_file)
     wl = ds['reflectance']['wavelength'][:]
@@ -303,14 +344,47 @@ def open_airborne_rfl(input_file, lazy=True):
         # need to consider some clever solutions.  In the meantime, this works, but is expensive
         rfl = np.transpose(ds['reflectance']['reflectance'], (1,2,0))
     else:
-        rfl = np.array(ds['reflectance']['reflectance'][:])
+        rfl = np.transpose(ds['reflectance']['reflectance'][:], (1,2,0))
     
     meta = SpectralMetadata(wl, fwhm, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
 
     return meta, rfl
 
+def open_airborne_rdn(input_file, lazy=True):
+    """
+    Opens an Airborne radiance NetCDF file and extracts the spectral metadata and radiance data.
 
-def open_airborne_obs(input_file, lazy=True, load_glt=False):
+    Args:
+        input_file (str): Path to the NetCDF file.
+        lazy (bool, optional): If True, loads the radiance data lazily. Defaults to True.
+
+    Returns:
+        tuple: A tuple containing:
+            - SpectralMetadata: An object containing the wavelengths and FWHM.
+            - numpy.ndarray or netCDF4.Variable: The radiance data, either as a lazy-loaded variable or a fully loaded numpy array.
+    """
+    ds = nc.Dataset(input_file)
+    wl = ds['radiance']['wavelength'][:]
+    fwhm = ds['radiance']['fwhm'][:]
+    proj = ds.variables['transverse_mercator'].spatial_ref
+    trans = [float(x) for x in ds.variables['transverse_mercator'].GeoTransform.split(' ')]
+    nodata_value = float(ds['radiance']['radiance']._FillValue)
+
+    if lazy:
+        # This is too bad....we're forced into inconsistent handling between AV3 and EMIT
+        # need to consider some clever solutions.  In the meantime, this works, but is expensive
+        rdn = np.transpose(ds['radiance']['radiance'], (1,2,0))
+    else:
+        rdn = np.transponse(ds['radiance']['radiance'][:], (1,2,0))
+    
+    meta = SpectralMetadata(wl, fwhm, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
+
+    return meta, rdn
+
+
+
+
+def open_airborne_obs(input_file, lazy=True, load_glt=False, load_loc=False):
     """
     Opens an Airborne observation NetCDF file and extracts the spectral metadata and obs data.
 
@@ -333,12 +407,48 @@ def open_airborne_obs(input_file, lazy=True, load_glt=False):
     nodata_value = float(ds['observation_parameters'][obs_names[0]]._FillValue)
     if load_glt:
         glt = np.stack([ds['geolocation_lookup_table']['sample'][:],ds['geolocation_lookup_table']['line'][:]],axis=-1)
+    if load_loc:
+        loc = np.stack([ds['lon'][:],ds['lat'][:]],axis=-1)
 
     # Don't have a good solution for lazy here, temporarily ignoring...
     if lazy:
         logging.warning("Lazy loading not supported for observation data.")
     obs = np.stack([ds['observation_parameters'][on] for on in obs_names], axis=-1)
     
-    meta = ObservationMetadata(obs_names, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
+    meta = GenericGeoMetadata(obs_names, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
 
-    return meta, obs
+    if load_glt and load_loc:
+        return meta, obs, glt, loc
+    elif load_glt:
+        return meta, obs, glt
+    elif load_loc:
+        return meta, obs, loc
+    else:
+        return meta, obs
+
+
+def get_extent_from_obs(input_file, get_resolution=False):
+    """
+    Gets the extent of the observation data.
+
+    Args:
+        input_file (str): Path to the input file.
+        get_resolution (bool, optional): If True, returns the resolution as well. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing:
+            - float: Upper left x-coordinate.
+            - float: Upper left y-coordinate.
+            - float: Lower right x-coordinate.
+            - float: Lower right y-coordinate.
+    """
+    # replace with open_airborne_obs once the lazy loading works
+    ds = nc.Dataset(input_file)
+    lat = ds['lat'][:]
+    lon = ds['lon'][:]
+    if get_resolution:
+        # Not quite right
+        res = np.abs(np.mean(np.diff(lat))), np.abs(np.mean(np.diff(lon)))
+        return np.min(lon), np.max(lat), np.max(lon), np.min(lat), None, None
+    else:
+        return np.min(lon), np.max(lat), np.max(lon), np.min(lat)
