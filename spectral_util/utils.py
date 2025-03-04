@@ -1,23 +1,24 @@
-
-
 import click
 import numpy as np
-from spec_io import load_data, write_cog
+
+from spectral_util import cli
+from spectral_util.io import load_data, write_cog
 
 # Define common arguments
 def common_arguments(f):
-
     # put this (counter-intuitively) in reverse order
     f = click.argument('output_file')(f)
     f = click.argument('input_file')(f)
     f = click.option('--ortho', is_flag=True, help='Orthorectify the output; only relevant if the input format is non-orthod')(f)
     return f
 
+
 def shared_options(f):
     f = click.option('--ortho', is_flag=True, help='Orthorectify the output; only relevant if the input format is non-orthod')
     return f
 
-@click.command()
+
+@cli.command(no_args_is_help=True)
 @common_arguments
 @click.option('--red_wl', default=660, help='Red band wavelength [nm]')
 @click.option('--nir_wl', default=800, help='NIR band wavelength [nm]')
@@ -27,6 +28,7 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
     """
     Calculate NDVI.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
@@ -51,7 +53,7 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
     write_cog(output_file, ndvi, meta, ortho=ortho)
 
 
-@click.command()
+@cli.command(no_args_is_help=True)
 @common_arguments
 @click.option('--nir_wl', default=866, help='Red band wavelength [nm]')
 @click.option('--swir_wl', default=2198, help='NIR band wavelength [nm]')
@@ -61,6 +63,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     """
     Calculate NBR.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
@@ -69,7 +72,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
         swir_wl (int): SWIR band wavelength [nm].
         nir_width (int): NIR band width [nm]; 0 = single wavelength.
         swir_width (int): SWIR band width [nm]; 0 = single wavelength.
-    """  
+    """
 
     click.echo(f"Running NBR Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
@@ -78,7 +81,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     swir = rfl[..., meta.wl_index(swir_wl)]
 
     nbr = (nir - swir) / (swir + nir)
-    nbr = nbr.squeeze().astype(np.float32)  
+    nbr = nbr.squeeze().astype(np.float32)
     nbr[nir == meta.nodata_value] = -9999
     nbr[np.isfinite(nbr) == False] = -9999
     nbr = nbr.reshape((nbr.shape[0], nbr.shape[1], 1))
@@ -86,7 +89,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     write_cog(output_file, nbr, meta, ortho=ortho, nodata_value=-9999)
 
 
-@click.command()
+@cli.command(no_args_is_help=True)
 @common_arguments
 @click.option('--red_wl', default=650, help='Red band wavelength [nm]')
 @click.option('--green_wl', default=560, help='Green band wavelength [nm]')
@@ -97,6 +100,7 @@ def rgb(input_file, output_file, ortho, red_wl, green_wl, blue_wl, stretch, scal
     """
     Calculate RGB composite.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
@@ -145,21 +149,7 @@ def rgb(input_file, output_file, ortho, red_wl, green_wl, blue_wl, stretch, scal
     write_cog(output_file, rgb, meta, ortho=ortho, nodata_value=nodata_value)
 
 
-
-
-@click.command()
-@common_arguments
-def ndwi(input_file, output_file):
-    click.echo("This doesn't work yet.")
-
-@click.group()
-def cli():
-    pass
-
-cli.add_command(ndvi)
-cli.add_command(nbr)
-cli.add_command(rgb)
-
-
-if __name__ == '__main__':
-    cli()
+# @cli.command(no_args_is_help=True)
+# @common_arguments
+# def ndwi(input_file, output_file):
+#     click.echo("This doesn't work yet.")

@@ -1,14 +1,16 @@
+import logging
+import time
+
 import click
 import numpy as np
+import pyproj
+from osgeo import osr
 from scipy.spatial import KDTree
 from scipy.signal import convolve2d
-
-import time
-import spec_io
-from osgeo import osr
-import pyproj
-import logging
 from tqdm import tqdm
+
+from spectral_util import cli
+from spectral_util import io as spec_io
 
 
 def remove_negatives(glt, clean_contiguous=False, clean_interpolated=False):
@@ -26,7 +28,7 @@ def remove_negatives(glt, clean_contiguous=False, clean_interpolated=False):
         nm = convolve2d(nm, np.ones((3,3)), mode='same', boundary='fill', fillvalue=0)
         glt[nm >= 3,:] = 0
 
-    # Remove interpolation indicator 
+    # Remove interpolation indicator
     if clean_interpolated:
         glt[...,:2] = np.abs(glt[...,:2])
     return glt
@@ -138,7 +140,7 @@ def find_subgrid_locations(y_grid: np.array, x_grid: np.array, y_subgrid: np.arr
     col_indices = col_indices.reshape(x_grid_minor.shape)
 
 
-    sub_glt_insert_idx = np.meshgrid(np.arange(y_start, y_start + y_grid_minor.shape[0]), 
+    sub_glt_insert_idx = np.meshgrid(np.arange(y_start, y_start + y_grid_minor.shape[0]),
                                      np.arange(x_start, x_start + y_grid_minor.shape[1]), indexing='ij')
 
     sub_glt_insert_idx = np.stack(sub_glt_insert_idx, axis=-1)
@@ -162,7 +164,7 @@ def find_subgrid_locations(y_grid: np.array, x_grid: np.array, y_subgrid: np.arr
     return np.stack((col_indices, row_indices), axis=-1), sub_glt_insert_idx
 
 
-@click.command()
+@cli.command(no_args_is_help=True)
 @click.argument('output_file', type=click.Path())
 @click.argument('input_file_list', type=click.Path(exists=True))
 @click.option('--x_resolution', type=float, default=None)
@@ -178,6 +180,7 @@ def build_obs_nc(output_file, input_file_list, x_resolution, y_resolution, targe
     """
     Build a mosaic from the input file.
 
+    \b
     Args:
         output_file (str): Path to the output file.
         input_file_list (str): Path to the input file.
@@ -231,21 +234,21 @@ def build_obs_nc(output_file, input_file_list, x_resolution, y_resolution, targe
         ul = proj(ul_lr[0], ul_lr[1])
         lr = proj(ul_lr[2], ul_lr[3])
         ul_lr = [ul[0], ul[1], lr[0], lr[1]]
-    
+
     if str(output_epsg)[0] == "4" and x_resolution > 1:
         raise ValueError(f"x_resolution is {x_resolution} (indicating meters), and EPSG is {output_epsg}.  Smells like lat/lon and UTM mismatch.  Terminating.")
 
-    logging.info("Bounding box (ul_lr): " + str(ul_lr)) 
+    logging.info("Bounding box (ul_lr): " + str(ul_lr))
 
-    trans = [ul_lr[0] - x_resolution/2., x_resolution, 0, 
+    trans = [ul_lr[0] - x_resolution/2., x_resolution, 0,
              ul_lr[1] - y_resolution/2., 0, y_resolution]
-    meta = spec_io.GenericGeoMetadata(['GLT X', 'GLT Y', 'File Index', 'OBS val'], 
-                                      projection=wkt, 
-                                      geotransform=trans, 
-                                      pre_orthod=True, 
+    meta = spec_io.GenericGeoMetadata(['GLT X', 'GLT Y', 'File Index', 'OBS val'],
+                                      projection=wkt,
+                                      geotransform=trans,
+                                      pre_orthod=True,
                                       nodata_value=0)
 
-    glt = np.zeros(( int(np.ceil((ul_lr[3] - ul_lr[1]) / y_resolution)), 
+    glt = np.zeros(( int(np.ceil((ul_lr[3] - ul_lr[1]) / y_resolution)),
                      int(np.ceil((ul_lr[2] - ul_lr[0]) / x_resolution)),
                      3), dtype=np.int32)
     criteria = np.zeros((glt.shape[0], glt.shape[1]), dtype=np.float32)
@@ -253,15 +256,15 @@ def build_obs_nc(output_file, input_file_list, x_resolution, y_resolution, targe
 
     x_grid_steps = np.arange(ul_lr[1], ul_lr[1] + trans[5]*glt.shape[0],trans[5])
     y_grid_steps = np.arange(ul_lr[0], ul_lr[0] + trans[1]*glt.shape[1],trans[1])
-    y_grid, x_grid = np.meshgrid(x_grid_steps, 
+    y_grid, x_grid = np.meshgrid(x_grid_steps,
                                  y_grid_steps,
                                  indexing='ij')
-    
+
     for _file, file in enumerate(tqdm(input_files, desc="Calculating GLT, File:", unit="files", ncols=80)):
         local_meta, obs, loc = spec_io.load_data(file.strip(), lazy=True, load_glt=False, load_loc=True)
         loc = np.stack(proj(loc[...,0],loc[...,1]),axis=-1)
-            
-        sub_glt, sub_glt_insert_idx = find_subgrid_locations(y_grid, x_grid, loc[...,1], loc[...,0], n_workers=n_cores)  
+
+        sub_glt, sub_glt_insert_idx = find_subgrid_locations(y_grid, x_grid, loc[...,1], loc[...,0], n_workers=n_cores)
         if sub_glt is None:
             logging.debug(f'{file} OOB')
             continue
@@ -280,14 +283,14 @@ def build_obs_nc(output_file, input_file_list, x_resolution, y_resolution, targe
                 crit_mask = np.logical_and(ob > existing_crit, valid)
             else:
                 raise ValueError(f"Invalid criteria_mode: {criteria_mode}")
-            
+
             # In any mode, if there were no previous data, that counts too
             crit_mask = np.logical_or(crit_mask, np.logical_and(valid, np.isnan(existing_crit)))
 
             # only assign criteria band if used
             criteria[sub_glt_insert_idx[crit_mask,0], sub_glt_insert_idx[crit_mask,1]] = ob[crit_mask]
         else:
-            crit_mask = sub_glt[...,0] != 0 
+            crit_mask = sub_glt[...,0] != 0
 
         glt[sub_glt_insert_idx[crit_mask,0], sub_glt_insert_idx[crit_mask,1], :2] = sub_glt[crit_mask,:]
         glt[sub_glt_insert_idx[crit_mask,0], sub_glt_insert_idx[crit_mask,1], 2] = _file + 1
@@ -298,7 +301,7 @@ def build_obs_nc(output_file, input_file_list, x_resolution, y_resolution, targe
     spec_io.write_cog(output_file, glt, meta, nodata_value=0)
 
 
-@click.command()
+@cli.command(no_args_is_help=True)
 @click.argument('glt_file', type=click.Path(exists=True))
 @click.argument('raw_files', type=click.Path(exists=True))
 @click.argument('output_file', type=click.Path())
@@ -308,6 +311,7 @@ def apply_glt(glt_file, raw_files, output_file, nodata_value, bands):
     """
     Apply the GLT to the input files.
 
+    \b
     Args:
         glt_file (str): Path to the GLT file.
         raw_files (str): Path to the raw files.
@@ -343,17 +347,3 @@ def apply_glt(glt_file, raw_files, output_file, nodata_value, bands):
             outdata[valid_glt, :] = dat[glt[valid_glt, 1], glt[valid_glt, 0], :]
 
     spec_io.write_cog(output_file, outdata, glt_meta, nodata_value=nodata_value)
-
-
-@click.group()
-def cli():
-    pass
-
-
-cli.add_command(build_obs_nc)
-cli.add_command(apply_glt)
-
-
-if __name__ == '__main__':
-    cli()
-    #build_mosaic_test()
