@@ -1,8 +1,10 @@
-from spectral.io import envi
-import netCDF4 as nc
-import os
-import numpy as np
 import logging
+import os
+
+import netCDF4 as nc
+import numpy as np
+from spectral.io import envi
+
 
 numpy_to_gdal = {
     np.dtype(np.float64): 7,
@@ -13,6 +15,7 @@ numpy_to_gdal = {
     np.dtype(np.uint16): 2,
     np.dtype(np.uint8): 1,
 }
+
 
 class GenericGeoMetadata:
     def __init__(self, band_names, geotransform=None, projection=None, glt=None, pre_orthod=False, nodata_value=None):
@@ -81,7 +84,7 @@ class SpectralMetadata:
             buffer (float, optional): The spectral range around the center wavelength to include. Defaults to None.
 
         Returns:
-            int or numpy.ndarray: The index of the closest wavelength if buffer is None or 0. 
+            int or numpy.ndarray: The index of the closest wavelength if buffer is None or 0.
                       If buffer is provided, returns an array of indices within the buffer range.
         """
         if buffer is None or buffer == 0:
@@ -173,7 +176,7 @@ def write_cog(output_file, data, meta, ortho=True, nodata_value=-9999):
         #if meta.band_names is not None:
         #    ds.GetRasterBand(i+1).SetDescription(meta.band_names[i])
     ds.BuildOverviews('NEAREST', [2, 4, 8, 16, 32, 64, 128])
-    
+
     tiff_driver = gdal.GetDriverByName('GTiff')
     output_dataset = tiff_driver.CreateCopy(output_file, ds, options=['COMPRESS=LZW', 'COPY_SRC_OVERVIEWS=YES', 'TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256'])
     ds = None
@@ -231,9 +234,9 @@ def open_envi(input_file, lazy=True):
         rfl = ds.open_memmap(interleave='bip').copy()
 
     meta = SpectralMetadata(wl, fwhm, nodata_value=nodata_value, geotransform=trans, projection=proj)
-    
+
     return meta, rfl
-    
+
 
 def open_tif(input_file, lazy=False):
     """
@@ -319,7 +322,7 @@ def open_emit_rdn(input_file, lazy=True, load_glt=False):
         rdn = ds['radiance']
     else:
         rdn = np.array(ds['radiance'][:])
-    
+
     glt = None
     if load_glt:
         glt = np.stack([ds['location']['glt_x'][:],ds['location']['glt_y'][:]],axis=-1)
@@ -355,7 +358,7 @@ def open_airborne_rfl(input_file, lazy=True):
         rfl = np.transpose(ds['reflectance']['reflectance'], (1,2,0))
     else:
         rfl = np.transpose(ds['reflectance']['reflectance'][:], (1,2,0))
-    
+
     meta = SpectralMetadata(wl, fwhm, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
 
     return meta, rfl
@@ -386,7 +389,7 @@ def open_airborne_rdn(input_file, lazy=True):
         rdn = np.transpose(ds['radiance']['radiance'], (1,2,0))
     else:
         rdn = np.transponse(ds['radiance']['radiance'][:], (1,2,0))
-    
+
     meta = SpectralMetadata(wl, fwhm, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
 
     return meta, rdn
@@ -424,7 +427,7 @@ def open_airborne_obs(input_file, lazy=True, load_glt=False, load_loc=False):
     if lazy:
         logging.warning("Lazy loading not supported for observation data.")
     obs = np.stack([ds['observation_parameters'][on] for on in obs_names], axis=-1)
-    
+
     meta = GenericGeoMetadata(obs_names, trans, proj, glt=None, pre_orthod=True, nodata_value=nodata_value)
 
     if load_glt and load_loc:

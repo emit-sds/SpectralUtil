@@ -1,23 +1,20 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "spectral-util"
-version = "0.0.1"
+dynamic = ["version"]
 authors = [
     {name = "Philip G. Brodrick", email = "philip.g.brodrick@jpl.nasa.gov"},
 ]
 description = "Imaging Spectrometer Utilities"
 readme = "README.md"
 license = {text = "BSD 3-Clause License"}
+requires-python = ">=3.9"
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
     "click",
@@ -37,6 +34,9 @@ test = ["pytest>=3.5.1"]
 [project.scripts]
 spectral_util = "spectral_util.__main__:cli"
 
-[tool.setuptools]
-packages = ["spectral_util"]
-include-package-data = true
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "spectral_util/__init__.py"
