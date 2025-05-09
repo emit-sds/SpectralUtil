@@ -243,17 +243,21 @@ def open_envi(input_file, lazy=True):
     else:
         proj = None
     if 'map info' in imeta:
-        map_info = imeta['map info'].split(',')
+        map_info = imeta['map info'].split(',') if type(imeta['map info']) == str else imeta['map info']
         trans = [float(map_info[3]), float(map_info[5]), 0, float(map_info[4]), 0, -float(map_info[6])]
     else:
         map_info, trans = None, None
-
+    
+    glt = None
+    if 'glt' in os.path.basename(input_file).lower():
+        glt = ds.open_memmap(interleave='bip').copy()
+    
     if lazy:
         rfl = ds.open_memmap(interleave='bip', writable=False)
     else:
         rfl = ds.open_memmap(interleave='bip').copy()
 
-    meta = SpectralMetadata(wl, fwhm, nodata_value=nodata_value, geotransform=trans, projection=proj)
+    meta = SpectralMetadata(wl, fwhm, nodata_value=nodata_value, geotransform=trans, projection=proj, glt=glt)
     return meta, rfl
     
 
@@ -303,6 +307,8 @@ def open_netcdf(input_file, lazy=True, load_glt=False, load_loc=False):
     input_filename = os.path.basename(input_file)
     if 'EMIT' in input_filename and 'RAD' in input_filename:
         return open_emit_rdn(input_file, lazy=lazy, load_glt=load_glt)
+    elif ('emit' in input_filename.lower() and 'obs' in input_filename.lower()):
+        return open_emit_obs_nc(input_file, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
     elif 'AV3' in input_filename and 'RFL' in input_filename:
         return open_airborne_rfl(input_file, lazy=lazy)
     elif 'AV3' in input_filename and 'RDN' in input_filename:
@@ -349,6 +355,41 @@ def open_emit_rdn(input_file, lazy=True, load_glt=False):
 
     return meta, rdn
 
+def open_emit_obs_nc(input_file, lazy=True, load_glt=False, load_loc=False):
+    """
+    Opens an EMIT observation NetCDF file and extracts the spectral metadata and obs data.
+
+    Args:
+        input_file (str): Path to the NetCDF file.
+        lazy (bool, optional): Ignored for obs data
+
+    Returns:
+        tuple: A tuple containing:
+            - SpectralMetadata: An object containing the wavelengths and FWHM.
+            - numpy.ndarray or netCDF4.Variable: The observation data
+    """
+    ds = nc.Dataset(input_file)
+    proj = ds.spatial_ref
+    trans = ds.geotransform
+
+    obs_names = list(ds['sensor_band_parameters']['observation_bands'][...])
+
+    nodata_value = float(ds['obs']._FillValue)
+    glt = None
+    if load_glt:
+        glt = np.stack([ds['location']['glt_x'][:],ds['location']['glt_y'][:]],axis=-1)
+    loc = None
+    if load_loc:
+        loc = np.stack([ds['location']['lon'][:],ds['location']['lat'][:]],axis=-1)
+
+    # Don't have a good solution for lazy here, temporarily ignoring...
+    if lazy:
+        logging.warning("Lazy loading not supported for observation data.")
+    obs = ds['obs'][...]
+    
+    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+
+    return meta, obs
 
 def open_airborne_rfl(input_file, lazy=True):
     """
@@ -499,7 +540,7 @@ def write_bil_chunk(dat, outfile, line, shape, dtype = 'float32'):
     outfile.close()
 
 
-def create_envi_file(output_file, data_shape, meta, dtype='float32'):
+def create_envi_file(output_file, data_shape, meta, dtype=np.dtype(np.float32)):
     """
     Creates an ENVI file with the given data and metadata.
 
