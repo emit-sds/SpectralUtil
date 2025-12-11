@@ -675,7 +675,7 @@ def write_envi_file(dat, meta, output_filename, interleave = 'BIL'):
         raise NotImplementedError(f'Print interleave mode {interleave} not yet supported.')
 
     create_envi_file(output_filename, dat.shape, meta, dtype = dat.dtype)
-    write_bil_chunk(dat.transpose([0,2,1]), output_filename, 0, (dat.shape[0], dat.shape[2], dat.shape[1]))
+    write_bil_chunk(dat.transpose([0,2,1]), output_filename, 0, (dat.shape[0], dat.shape[2], dat.shape[1]), dtype = dat.dtype)
 
 def write_bil_chunk(dat, outfile, line, shape, dtype = 'float32'):
     """
