@@ -23,11 +23,16 @@ classifiers = [
 dependencies = [
     "click",
     "netCDF4<1.7.1",
-    "numpy>=1.20,<2.0.0",
+    "numpy>=1.20",
     "gdal>=3.0.0",
     "spectral>=0.19",
     "scipy>1.0",
+    "pyproj",
+    "tqdm",
+    "earthaccess"
 ]
+
+
 
 [project.urls]
 Homepage = "http://github.com/emit-sds/SpectralUtil"
@@ -41,3 +46,38 @@ spectral_util = "spectral_util.__main__:cli"
 [tool.setuptools]
 packages = ["spectral_util"]
 include-package-data = true
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[tool.pixi.dependencies]
+gdal = ">=3.0.0"
+netcdf4 = "<1.7.1"
+scikit-image = ">=0.24.0,<0.27"
+
+[tool.pixi.pypi-dependencies]
+spectral-util = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+
+py39 = { features = ["test", "py39"] }
+py310 = { features = ["test", "py310"] }
+py311 = { features = ["test", "py311"] }
+py312 = { features = ["test", "py312"] }
+
+[tool.pixi.tasks]
+
+
+[tool.pixi.feature.py39.dependencies]
+python = "3.9.*"
+[tool.pixi.feature.py310.dependencies]
+python = "3.10.*"
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+
