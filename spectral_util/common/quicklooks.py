@@ -1,13 +1,12 @@
-
+#!/usr/bin/env python3
+"""Quicklooks module for spectral utilities."""
 
 import click
 import numpy as np
-from spec_io import load_data, write_cog
+from spectral_util.spec_io import load_data, write_cog
 
 # Define common arguments
 def common_arguments(f):
-
-    # put this (counter-intuitively) in reverse order
     f = click.argument('output_file')(f)
     f = click.argument('input_file')(f)
     f = click.option('--ortho', is_flag=True, help='Orthorectify the output; only relevant if the input format is non-orthod')(f)
@@ -50,7 +49,6 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
 
     write_cog(output_file, ndvi, meta, ortho=ortho)
 
-
 @click.command()
 @common_arguments
 @click.option('--nir_wl', default=866, help='Red band wavelength [nm]')
@@ -69,7 +67,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
         swir_wl (int): SWIR band wavelength [nm].
         nir_width (int): NIR band width [nm]; 0 = single wavelength.
         swir_width (int): SWIR band width [nm]; 0 = single wavelength.
-    """  
+    """
 
     click.echo(f"Running NBR Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
@@ -78,13 +76,12 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     swir = rfl[..., meta.wl_index(swir_wl)]
 
     nbr = (nir - swir) / (swir + nir)
-    nbr = nbr.squeeze().astype(np.float32)  
+    nbr = nbr.squeeze().astype(np.float32)
     nbr[nir == meta.nodata_value] = -9999
     nbr[np.isfinite(nbr) == False] = -9999
     nbr = nbr.reshape((nbr.shape[0], nbr.shape[1], 1))
 
     write_cog(output_file, nbr, meta, ortho=ortho, nodata_value=-9999)
-
 
 @click.command()
 @common_arguments
@@ -141,25 +138,15 @@ def rgb(input_file, output_file, ortho, red_wl, green_wl, blue_wl, stretch, scal
     else:
         nodata_value = meta.nodata_value
 
-
     write_cog(output_file, rgb, meta, ortho=ortho, nodata_value=nodata_value)
-
-
-
-
-@click.command()
-@common_arguments
-def ndwi(input_file, output_file):
-    click.echo("This doesn't work yet.")
 
 @click.group()
 def cli():
     pass
 
-cli.add_command(ndvi)
-cli.add_command(nbr)
 cli.add_command(rgb)
-
+cli.add_command(nbr)
+cli.add_command(ndvi)
 
 if __name__ == '__main__':
     cli()

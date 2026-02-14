@@ -1,0 +1,1 @@
+# ea_assist module initialization
