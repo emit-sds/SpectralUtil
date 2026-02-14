@@ -1,13 +1,14 @@
-
+#!/usr/bin/env python3
+"""Centralized CLI interface for SpectralUtil."""
 
 import click
 import numpy as np
-from spec_io import load_data, write_cog
+from spectral_util.spec_io.spec_io import load_data, write_cog
+from spectral_util.mosaic.mosaic import cli as mosaic_cli
+from spectral_util.ea_assist import earthaccess_helpers_AV3, earthaccess_helpers_EMIT
 
 # Define common arguments
 def common_arguments(f):
-
-    # put this (counter-intuitively) in reverse order
     f = click.argument('output_file')(f)
     f = click.argument('input_file')(f)
     f = click.option('--ortho', is_flag=True, help='Orthorectify the output; only relevant if the input format is non-orthod')(f)
@@ -26,15 +27,6 @@ def shared_options(f):
 def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
     """
     Calculate NDVI.
-
-    Args:
-        input_file (str): Path to the input file.
-        output_file (str): Path to the output file.
-        ortho (bool): Orthorectify the output.
-        red_wl (int): Red band wavelength [nm].
-        nir_wl (int): NIR band wavelength [nm].
-        red_width (int): Red band width [nm]; 0 = single wavelength.
-        nir_width (int): NIR band width [nm]; 0 = single wavelength.
     """
     click.echo(f"Running NDVI Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
@@ -50,7 +42,6 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
 
     write_cog(output_file, ndvi, meta, ortho=ortho)
 
-
 @click.command()
 @common_arguments
 @click.option('--nir_wl', default=866, help='Red band wavelength [nm]')
@@ -60,17 +51,7 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
 def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     """
     Calculate NBR.
-
-    Args:
-        input_file (str): Path to the input file.
-        output_file (str): Path to the output file.
-        ortho (bool): Orthorectify the output.
-        nir_wl (int): NIR band wavelength [nm].
-        swir_wl (int): SWIR band wavelength [nm].
-        nir_width (int): NIR band width [nm]; 0 = single wavelength.
-        swir_width (int): SWIR band width [nm]; 0 = single wavelength.
-    """  
-
+    """
     click.echo(f"Running NBR Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
 
@@ -78,13 +59,12 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     swir = rfl[..., meta.wl_index(swir_wl)]
 
     nbr = (nir - swir) / (swir + nir)
-    nbr = nbr.squeeze().astype(np.float32)  
+    nbr = nbr.squeeze().astype(np.float32)
     nbr[nir == meta.nodata_value] = -9999
     nbr[np.isfinite(nbr) == False] = -9999
     nbr = nbr.reshape((nbr.shape[0], nbr.shape[1], 1))
 
     write_cog(output_file, nbr, meta, ortho=ortho, nodata_value=-9999)
-
 
 @click.command()
 @common_arguments
@@ -96,16 +76,6 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
 def rgb(input_file, output_file, ortho, red_wl, green_wl, blue_wl, stretch, scale):
     """
     Calculate RGB composite.
-
-    Args:
-        input_file (str): Path to the input file.
-        output_file (str): Path to the output file.
-        ortho (bool): Orthorectify the output.
-        red_wl (int): Red band wavelength [nm].
-        green_wl (int): Green band wavelength [nm].
-        blue_wl (int): Blue band wavelength [nm].
-        stretch [(int), (int)]: Stretch the RGB values to the percentile min & max listed here.  Set to -1, -1 to not stretch.
-        scale [(int), (int), (int), (int), (int), (int)]: Scale the RGB values to the min & max listed here.  Set to -1s to not scale (default).
     """
     if np.all(np.array(scale) != -1) and np.all(np.array(stretch) != -1):
         raise ValueError("Cannot set both stretch and scale")
@@ -141,11 +111,7 @@ def rgb(input_file, output_file, ortho, red_wl, green_wl, blue_wl, stretch, scal
     else:
         nodata_value = meta.nodata_value
 
-
     write_cog(output_file, rgb, meta, ortho=ortho, nodata_value=nodata_value)
-
-
-
 
 @click.command()
 @common_arguments
@@ -159,7 +125,9 @@ def cli():
 cli.add_command(ndvi)
 cli.add_command(nbr)
 cli.add_command(rgb)
-
+cli.add_command(mosaic_cli, name='mosaic')
+cli.add_command(earthaccess_helpers_AV3.find_download_and_combine, name='av3_download')
+cli.add_command(earthaccess_helpers_EMIT.find_download_and_combine_EMIT, name='emit_download')
 
 if __name__ == '__main__':
     cli()

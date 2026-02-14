@@ -1,14 +1,12 @@
-import numpy as np
 import os
 import json
 import glob
 from osgeo import gdal
 import pdb
 import click
-import skimage.exposure
 
 import earthaccess
-import spec_io
+import spectral_util.spec_io as spec_io
 
 @click.command()
 @click.argument('output_folder', type=click.Path(dir_okay=True, file_okay=False), required=True)
@@ -18,7 +16,7 @@ import spec_io
 @click.option('--overwrite', is_flag=True, default=False, help='Set to true to overwrite granules (download them again)')
 @click.option('--symlinks_folder', type=click.Path(exists=True, dir_okay=True, file_okay=False), help = 'Location to put symlinks')
 @click.option('--search_only', is_flag=True, default=False, help='Location to put symlinks')
-def find_download_and_combine_EMIT(output_folder, 
+def find_download_and_combine(output_folder, 
                               temporal = None, 
                               count = 2000,
                               bounding_box = None,
@@ -35,30 +33,26 @@ def find_download_and_combine_EMIT(output_folder,
 
     The file structure is as follows:
     output_folder/granules/*: all files for each granule are stored here
-    output_folder/EMIT*: the vrts are stored here
+    output_folder/AV3*: the vrts are stored here
 
     For example:
-    output_folder/granules/EMIT_L2B_CH4ENH_002_20250603T173453_2515412_004 # Note that the folder name says L2B but it has L1B too
-    output_folder/granules/EMIT_L2B_CH4ENH_002_20250603T173505_2515412_005
-    output_folder/EMIT20250603T173453_004_005 # Contains the vrts for the two scenes in the granules folder
+    output_folder/granules/AV320241004t184138_013_L2B_GHG_1 # Note that the folder name says L2B but its all L1B too (expect rdn)
+    output_folder/granules/AV320241004t184138_014_L2B_GHG_1
+    output_folder/AV320241004t184138_013_014 # Contains the vrts for the two scenes in the granules folder
 
     If symlinks_folder is provided, then symlinks to each of the vrt folders are created in this folder. The purpose is to have a single
     repository with links to all the data in it in case you don't remember where you put a case.
 
     Example call:
 
-    python earthaccess_helpers_EMIT.py /store/jfahlen/test/EMIT_data --temporal 2024-10-04T16:00:00 2024-10-04T17:00:00 --bounding_box -103.74460188 32.22680624 -103.74481188 32.22700624 --search_only
+    python earthaccess_helpers.py /store/jfahlen/test/av3_October_2024 --temporal 2024-10-04T16:00:00 2024-10-04T17:00:00 --bounding_box -103.74460188 32.22680624 -103.74481188 32.22700624 --search_only
     '''
-    short_name_ghg, short_name_rdn, short_name_rfl = 'EMITL2BCH4ENH', 'EMITL1BRAD', 'EMITL2ARFL'
-
-    r_ghg = earthaccess.search_data(short_name = short_name_ghg,
+    r_ghg = earthaccess.search_data(short_name = 'AV3_L2B_GHG_2358',
                                     temporal = temporal, count = count, bounding_box = bounding_box)
-    r_rdn = earthaccess.search_data(short_name = short_name_rdn,
-                                    temporal = temporal, count = count, bounding_box = bounding_box)
-    r_rfl = earthaccess.search_data(short_name = short_name_rfl,
+    r_rdn = earthaccess.search_data(short_name = 'AV3_L1B_RDN_2356',
                                     temporal = temporal, count = count, bounding_box = bounding_box)
 
-    earthaccess_fids = [g['meta']['native-id'] for g in r_ghg] # Ex: EMIT_L2B_CH4ENH_002_20250603T173453_2515412_004
+    earthaccess_fids = [g['meta']['native-id'] for g in r_ghg] # Ex: AV320241008t193024_003_L2B_GHG_1
     
     # Print names
     if search_only:
@@ -77,25 +71,23 @@ def find_download_and_combine_EMIT(output_folder,
     if not os.path.exists(granule_path):
         os.mkdir(granule_path)
 
-    for i, (efid, rd, gh, rf) in enumerate(zip(earthaccess_fids, r_rdn, r_ghg, r_rfl)):
+    for i, (efid, rd, gh) in enumerate(zip(earthaccess_fids, r_rdn, r_ghg)):
         print(f'Downloading {efid}, #{i+1} of {len(earthaccess_fids)}')
-        download_an_EMIT_granule(rd, gh, rf, granule_path, overwrite = False)
+        download_an_AV3_granule(rd, gh, granule_path, overwrite = False)
     
-    # Get all orbit IDs
-    orbit_ids = sorted(list(set([x.split('_')[-2] for x in earthaccess_fids]))) 
+    # Get all FIDs, combining all scene IDs into a single FID
+    fids = sorted(list(set([x.split('_')[0] for x in earthaccess_fids]))) # Ex: AV320241008t193024
 
     # Make vrt files that combine each scene in a pass into one vrt file
-    fids_with_scene_numbers = [] # Ex: EMIT20250603T173453_004_005
-    for orbit_id in orbit_ids:
-        fid_with_scene_numbers = join_EMIT_scenes_as_VRT(orbit_id, granule_path, output_folder, 
-                                                        tags_to_join = ['L2A_MASK', 'CH4ENH', 'CH4SENS', 'CH4UNCERT'],
-                                                        rgb_channel_idx = [35, 23, 11]) # 641, 552, 462 nm  
+    fids_with_scene_numbers = [] # Ex: AV320231008t145024_000_001
+    for fid in fids:
+        fid_with_scene_numbers = join_AV3_scenes_as_VRT(fid, granule_path, output_folder)
         fids_with_scene_numbers.append(fid_with_scene_numbers)
-        join_EMIT_scenes_as_VRT_pixel_time_only(orbit_id, granule_path, output_folder)
-                                              
+        join_AV3_scenes_as_VRT_pixel_time_only(fid, granule_path, output_folder)
+    
     # Make symlinks to the granules folder in the symlinks_folder
     if symlinks_folder is not None:
-        folders = glob.glob(granule_path + '/*')
+        folders = glob.glob(granule_path)
         for folder in folders:
             dst = os.path.join(symlinks_folder, os.path.split(folder)[-1])
             if os.path.islink(dst): # link exists
@@ -108,13 +100,10 @@ def find_download_and_combine_EMIT(output_folder,
             else: # link did not exist, so create it
                 os.symlink(folder, dst)
 
-def join_EMIT_scenes_as_VRT_pixel_time_only(orbit_id, granule_storage_location, output_location):
-
-    glob_str = os.path.join(granule_storage_location, f'*_{orbit_id}_*')
-    folders = glob.glob(glob_str)
+def join_AV3_scenes_as_VRT_pixel_time_only(fid, storage_location, output_location):
+    folders = glob.glob(os.path.join(storage_location, f'{fid}_*'))
     if len(folders) == 0:
-        raise ValueError(f'There are no folders matching {glob_str}')
-
+        raise ValueError(f'There are no folders matching ' + os.path.join(storage_location, f'fid_*'))
     files = []
     for folder in folders:
         j = json.load(open(os.path.join(folder, 'data_files.json'),'r'))
@@ -122,7 +111,7 @@ def join_EMIT_scenes_as_VRT_pixel_time_only(orbit_id, granule_storage_location, 
         out_tif = os.path.join(folder, os.path.split(obs_filename)[-1].split('.')[0] + '_times_only.tif')
 
         m_obs, d_obs = spec_io.load_data(obs_filename, load_glt = True, lazy = False)
-        d_obs_ort = spec_io.ortho_data(d_obs[:,:,-2], m_obs.glt)
+        d_obs_ort = spec_io.ortho_data(d_obs[:,:,0], m_obs.glt)
 
         # Save the orthoed times to tif so we can make a vrt below
         spec_io.write_geotiff(d_obs_ort, m_obs, out_tif)
@@ -132,66 +121,48 @@ def join_EMIT_scenes_as_VRT_pixel_time_only(orbit_id, granule_storage_location, 
 
         files.append(out_tif)
 
-    # Create folder and vrt name like: EMIT20250603T173453_004_005
-    scene_numbers = [os.path.splitext(x)[0].split('_')[-3] for x in files]
+    # Create folder and vrt name like: AV320231008t145024_000_001 
+    scene_numbers = [os.path.split(x.strip())[-1].split('_')[1] for x in files]
     scene_numbers = sorted(scene_numbers)
-
-    fids = [os.path.splitext(x)[0].split('_')[-5] for x in files]
-    fids = sorted(fids)
-
-    fid_with_scene_numbers = f'EMIT{fids[0]}_{scene_numbers[0]}_{scene_numbers[-1]}'
-    output_folder = os.path.join(output_location, fid_with_scene_numbers)
+    output_folder = os.path.join(output_location, f'{fid}_{scene_numbers[0]}_{scene_numbers[-1]}')
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
 
-    vrt_filename = os.path.join(output_folder, f'{fid_with_scene_numbers}_obs_times.vrt')
+    vrt_filename = os.path.join(output_folder, f'{fid}_{scene_numbers[0]}_{scene_numbers[-1]}_obs_times.vrt')
     my_vrt = gdal.BuildVRT(vrt_filename, files)
     my_vrt = None
 
-def join_EMIT_scenes_as_VRT(orbit_id, granule_storage_location, output_location, 
+def join_AV3_scenes_as_VRT(fid, granule_storage_location, output_location, 
                            tags_to_join = ['CH4_UNC_ORT', 'CH4_SNS_ORT', 'CH4_ORT', \
                                            'CO2_UNC_ORT', 'CO2_SNS_ORT', 'CO2_ORT'], 
                            rgb_channel_idx = [0,1,2]):
     '''Combine all the granule files that match {tags_to_join} with {fid} in {granule_storage_location} into 
     vrt files in output_location.
 
-    Create an RGB from the radiance called RDN_QL
+    Note that the RDN_QL file is done by default, but it needs to be orthorectified
+
+    For reference, good channel indices for rdn rgb are correspond to 641, 552, 462 nm in AV3, or
+    rgb_channel_idx = [34,22,10]
     '''
-    glob_str = os.path.join(granule_storage_location, f'*_{orbit_id}_*')
-    folders = glob.glob(glob_str)
+    folders = glob.glob(os.path.join(granule_storage_location, f'{fid}_*'))
     if len(folders) == 0:
-        raise ValueError(f'There are no folders matching {glob_str}')
+        raise ValueError(f'There are no folders matching ' + os.path.join(granule_storage_location, f'fid_*'))
     
     for tag in tags_to_join:
         files = []
         for folder in folders:
-            j =json.load(open(os.path.join(folder, 'data_files.json'),'r'))
-            fs = j[f'{tag}']
-            
-            # The L2A mask file is not orthorectified, so do it here and save at tif.
-            # Append the tif filename instead of the .nc filename
-            if tag == 'L2A_MASK': 
-                m, d = spec_io.load_data(fs, mask_type = 'mask', load_glt = True, load_loc = True)
-                d_ort = spec_io.ortho_data(d, m.glt)
-                fs = os.path.splitext(fs)[0] +  '.tif'
-                spec_io.write_geotiff(d_ort, m, fs)
-                j['L2A_MASK_ORT'] = fs
-                json.dump(j, open(os.path.join(folder, 'data_files.json'),'w'), indent = 4)
-
+            fs = json.load(open(os.path.join(folder, 'data_files.json'),'r'))[f'{tag}']
             files.append(fs)
-        
-        scene_numbers = [os.path.splitext(x)[0].split('_')[-1] for x in files]
+
+        scene_numbers = [os.path.split(x)[-1].split('_')[1] for x in files]
         scene_numbers = sorted(scene_numbers)
 
-        fids = [os.path.splitext(x)[0].split('_')[-3] for x in files]
-        fids = sorted(fids)
-
-        output_folder = os.path.join(output_location, f'EMIT{fids[0]}_{scene_numbers[0]}_{scene_numbers[-1]}')
+        output_folder = os.path.join(output_location, f'{fid}_{scene_numbers[0]}_{scene_numbers[-1]}')
         if not os.path.exists(output_folder):
             os.mkdir(output_folder)
 
         # Make output name be the fid plume the first and last scene included in the vrt plus the tag
-        fid_with_scene_numbers = f'EMIT{fids[0]}_{scene_numbers[0]}_{scene_numbers[-1]}'
+        fid_with_scene_numbers = f'{fid}_{scene_numbers[0]}_{scene_numbers[-1]}'
         vrt_filename = os.path.join(output_folder, f'{fid_with_scene_numbers}_{tag.split(".")[0]}.vrt')
         my_vrt = gdal.BuildVRT(vrt_filename, files)
         my_vrt = None
@@ -202,16 +173,15 @@ def join_EMIT_scenes_as_VRT(orbit_id, granule_storage_location, output_location,
         for folder in folders:
 
             j = json.load(open(os.path.join(folder, 'data_files.json'),'r'))
-            rdn_filename = j['RAD']
+            rdn_filename = j['RDN_QL']
             obs_filename = j['OBS']
 
-            _, d_rad = spec_io.load_data(rdn_filename, load_glt = True, lazy = False)
+            _, d_rgb = spec_io.load_data(rdn_filename, load_glt = True, lazy = False)
             m_obs, _ = spec_io.load_data(obs_filename, load_glt = True, lazy = False)
-            rgb_data = spec_io.ortho_data(d_rad[:,:,rgb_channel_idx], m_obs.glt)
-            rgb_data = scale_for_rgb(rgb_data)
+            rgb_data = spec_io.ortho_data(d_rgb, m_obs.glt)
 
             # Make orthoed tif so we can create a vrt below
-            rdn_ort_tif_filename = rdn_filename.replace('L1B_RAD', 'RDN_QL').replace('.nc', '.tif')
+            rdn_ort_tif_filename = '.'.join(rdn_filename.strip().split('.')[:-1]) + '_ORT.tif'
             spec_io.write_geotiff(rgb_data, m_obs, rdn_ort_tif_filename)
 
             j['RDN_QL_ORT'] = rdn_ort_tif_filename
@@ -219,14 +189,13 @@ def join_EMIT_scenes_as_VRT(orbit_id, granule_storage_location, output_location,
 
             rdn_ort_tif_filenames.append(rdn_ort_tif_filename)
         
-        fid_with_scene_numbers = f'EMIT{fids[0]}_{scene_numbers[0]}_{scene_numbers[-1]}'
-        vrt_filename = os.path.join(output_folder, f'{fid_with_scene_numbers}_RDN_QL.vrt')
+        vrt_filename = os.path.join(output_folder, f'{fid}_{scene_numbers[0]}_{scene_numbers[-1]}_RDN_ORT.vrt')
         my_vrt = gdal.BuildVRT(vrt_filename, rdn_ort_tif_filenames)
         my_vrt = None
     
     return fid_with_scene_numbers
 
-def download_an_EMIT_granule(rdn_granule, ghg_granule, rfl_granule, storage_location, overwrite = False):
+def download_an_AV3_granule(rdn_granule, ghg_granule, storage_location, overwrite = False):
     name = ghg_granule['meta']['native-id']
     output_folder = os.path.join(storage_location, name)
     download = False
@@ -241,14 +210,11 @@ def download_an_EMIT_granule(rdn_granule, ghg_granule, rfl_granule, storage_loca
         rdn_files_without_full_RDN = [x for x in rdn_granule.data_links() if 'RDN.nc' not in x]
         download_from_urls(rdn_files_without_full_RDN, output_folder)
         download_from_urls(ghg_granule.data_links(), output_folder)
-        l2a_mask_files = [x for x in rfl_granule.data_links() if 'L2A_MASK' in x]
-        download_from_urls(l2a_mask_files, output_folder)
 
-        tags = ['OBS', 'RAD', 'L2A_MASK', 'CH4ENH', 'CH4SENS', 'CH4UNCERT']
-        make_files_list_from_urls_or_glob(rdn_files_without_full_RDN + 
-                                          ghg_granule.data_links() +
-                                          rfl_granule.data_links(), 
-                                          tags, output_folder)
+        tags = ['OBS', 'RDN_QL', 'BANDMASK', \
+                'CH4_SNS_ORT', 'CH4_UNC_ORT', 'CH4_ORT_QL', 'CH4_ORT', \
+                'CO2_SNS_ORT', 'CO2_UNC_ORT', 'CO2_ORT_QL', 'CO2_ORT']
+        make_files_list_from_urls_or_glob(rdn_files_without_full_RDN + ghg_granule.data_links(), tags, output_folder)
 
     return
 
@@ -287,8 +253,7 @@ def make_files_list_from_urls_or_glob(urls, tags, outpath):
     files_list = {}
     for tag in tags:
         try:
-            #ind = [i for i, x in enumerate(urls_cut_noext) if x.endswith(tag)][0]
-            ind = [i for i, x in enumerate(urls_cut_noext) if tag in x][0]
+            ind = [i for i, x in enumerate(urls_cut_noext) if x.endswith(tag)][0]
         except:
             pdb.set_trace()
         files_list[tag] = os.path.join(outpath, f'{urls_cut[ind]}')
@@ -296,16 +261,5 @@ def make_files_list_from_urls_or_glob(urls, tags, outpath):
     json.dump(files_list, open(os.path.join(outpath, 'data_files.json'), 'w'), indent = 4)
     return
 
-def scale_for_rgb(d_in):
-    d = np.where(d_in < -9990, np.nan, d_in)
-    d_out = np.zeros_like(d) #.astype(int)
-    for i in np.arange(d.shape[-1]):
-        mi, ma = np.nanpercentile(d[:,:,i], [.5,99.5])
-        di = skimage.exposure.rescale_intensity(d_in[:,:,i], in_range = (mi,ma))
-        di = skimage.exposure.equalize_hist(di)
-        d_out[:,:,i] = skimage.exposure.rescale_intensity(di, in_range = (di.min(), di.max()))
-
-    return np.where(d_in > -9990, d_out, -9999)
-
 if __name__ == '__main__':
-    find_download_and_combine_EMIT()
+    find_download_and_combine()
