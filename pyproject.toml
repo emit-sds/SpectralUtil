@@ -69,10 +69,11 @@ spectral-util = { path = ".", editable = true }
 [tool.pixi.environments]
 default = { solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
-py39 = { features = ["test", "py39"], solve-group = "default" }
-py310 = { features = ["test", "py310"], solve-group = "default" }
-py311 = { features = ["test", "py311"], solve-group = "default" }
-py312 = { features = ["test", "py312"], solve-group = "default" }
+
+py39 = { features = ["test", "py39"] }
+py310 = { features = ["test", "py310"] }
+py311 = { features = ["test", "py311"] }
+py312 = { features = ["test", "py312"] }
 
 [tool.pixi.tasks]
 
