@@ -47,10 +47,14 @@ def find_download_and_combine(output_folder,
 
     python earthaccess_helpers.py /store/jfahlen/test/av3_October_2024 --temporal 2024-10-04T16:00:00 2024-10-04T17:00:00 --bounding_box -103.74460188 32.22680624 -103.74481188 32.22700624 --search_only
     '''
-    r_ghg = earthaccess.search_data(short_name = 'AV3_L2B_GHG_2358',
-                                    temporal = temporal, count = count, bounding_box = bounding_box)
-    r_rdn = earthaccess.search_data(short_name = 'AV3_L1B_RDN_2356',
-                                    temporal = temporal, count = count, bounding_box = bounding_box)
+    if bounding_box is not None:
+        r_ghg = earthaccess.search_data(short_name = 'AV3_L2B_GHG_2358',
+                                        temporal = temporal, count = count, bounding_box = bounding_box)
+        r_rdn = earthaccess.search_data(short_name = 'AV3_L1B_RDN_2356',
+                                        temporal = temporal, count = count, bounding_box = bounding_box)
+    else:
+        r_ghg = earthaccess.search_data(short_name = 'AV3_L2B_GHG_2358', temporal = temporal, count = count)
+        r_rdn = earthaccess.search_data(short_name = 'AV3_L1B_RDN_2356', temporal = temporal, count = count)
 
     earthaccess_fids = [g['meta']['native-id'] for g in r_ghg] # Ex: AV320241008t193024_003_L2B_GHG_1
     
