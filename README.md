@@ -9,6 +9,14 @@ This is a package for basic manipulation of imaging spectroscopy data. It is des
 
 ## Installation
 
+To install the package, we recommend using [pixi](https://pixi.sh):
+
+```bash
+pixi install
+```
+
+Or you can install via pip, though depending on the system you may experience gdal-related issues:
+
 ```bash
 pip install spectral_util
 ```
