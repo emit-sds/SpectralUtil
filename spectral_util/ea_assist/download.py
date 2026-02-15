@@ -19,13 +19,13 @@ def get_scene(outdir: str,
               subfile: str = '.*',
               granule_name:str = None, 
               version: str= None, 
-              temoporal: str= None, 
+              temporal: str= None, 
               bounding_box:Tuple[float, float, float, float] = None, 
               count: int = None, 
               overwrite: bool = False):
     earthaccess.login(persist=True)
     kargs = {
-        'temporal': temoporal,
+        'temporal': temporal,
         'bounding_box': bounding_box,
         'count': count,
         'version': version,
