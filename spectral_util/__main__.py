@@ -2,7 +2,7 @@
 """Centralized CLI interface for SpectralUtil."""
 
 import click
-from spectral_util.common import quicklooks
+from spectral_util import common
 from spectral_util.mosaic import mosaic
 from spectral_util.ea_assist import earthaccess_helpers_AV3, earthaccess_helpers_EMIT
 from spectral_util import ea_assist
@@ -13,7 +13,8 @@ def cli():
 
 cli.add_command(ea_assist.cli, name='download')
 cli.add_command(mosaic.cli, name='mosaic')
-cli.add_command(quicklooks.cli, name='quicklooks')
+cli.add_command(common.cli_quicklook, name='quicklooks')
+cli.add_command(common.cli_plot, name='plot')
 
 if __name__ == '__main__':
     cli()
