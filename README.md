@@ -2,9 +2,11 @@
 
 This is a package for basic manipulation of imaging spectroscopy data. It is designed to accommodate data from a variety of instruments, abstracting out the specifics of the file delivery. Currently, the package supports data from the following instruments / product levels:
 
+- [AVIRIS-3 L1B Radiance](https://doi.org/10.3334/ORNLDAAC/2356)
 - [AVIRIS-3 L2A Reflectance](https://daac.ornl.gov/cgi-bin/dsviewer.pl?ds_id=2357)
 - AVIRIS-NG L2A Reflectance
 - [EMIT L1B Radiance](https://lpdaac.usgs.gov/products/emitl1bradv001/)
+- [EMIT L2A Reflectance](https://lpdaac.usgs.gov/products/emitl2arflv001/)
 - Any data in ENVI format
 
 ## Installation
