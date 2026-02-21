@@ -66,6 +66,11 @@ spectral_util av3-download /path/to/output --temporal 2024-10-04T16:00:00 2024-1
 spectral_util emit-download /path/to/output --temporal 2024-10-04T16:00:00 2024-10-04T17:00:00 --bounding_box -103.74460188 32.22680624 -103.74481188 32.22700624
 ```
 
+### Reformat an EMIT file
+```
+spectral_util reformat nc-to-envi EMIT_L2A_RFL_001_20250525T090616_2514506_004.nc test_emit_rfl --ortho
+```
+
 ## Python API
 
 For programmatic use, the package can be imported directly:
@@ -109,23 +114,16 @@ spectral_util quicklooks ndvi EMIT_L1B_RAD_001_20240715T195403_2419712_015.nc em
 - `stack-glts`: Stack multiple GLTs into a single output
 
 ### Download Commands
-- `av3-download`: Download AV3 data from Earthdata
-- `emit-download`: Download EMIT data from Earthdata
+- `get-fid`: Download a specific FID for a given product via CMR.
+- `av3-download`: Download AV3 data from Earthdata - currently niche usage, to be updated
+- `emit-download`: Download EMIT data from Earthdata - currently niche usage, to be updated
+
+## Reformat Commands
+- `nc-to-envi`: Convert a netcdf data file to an envi binary file, with options
 
 ## Options
 
-All commands support various options for customization:
-
-- `--ortho`: Orthorectify the output
-- `--red_wl`, `--green_wl`, `--blue_wl`: Custom wavelength selection
-- `--stretch`: Stretch RGB values to percentiles
-- `--scale`: Scale RGB values to min/max pairs
-- `--x_resolution`, `--y_resolution`: Set output resolution
-- `--temporal`: Set time range for downloads
-- `--bounding_box`: Set geographic bounding box
-- `--overwrite`: Overwrite existing files
-- `--symlinks_folder`: Create symlinks in specified folder
-- `--search_only`: Only search without downloading
+Most commands have custom options - call the given utility with --help to see all options.
 
 ## Examples
 
@@ -151,3 +149,4 @@ For example:
 spectral_util quicklooks rgb --help
 spectral_util mosaic build-obs-nc --help
 spectral_util av3-download --help
+```
