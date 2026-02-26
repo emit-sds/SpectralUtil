@@ -77,6 +77,8 @@ def get_scene(outdir: str,
 def get_fid(outdir, short_name, fid, subfile, version, overwrite):
     """
     Download Earth Data granules based on search criteria.
+
+    \b
     Args:
         outdir (str): Directory to save downloaded files.
         short_name (str): Short name of the dataset to search for.

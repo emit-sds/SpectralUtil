@@ -179,6 +179,7 @@ def stack_glts(glt_files, obs_file_lists, output_glt_file, output_file_list):
     """
     Stack the GLTs from the input files.
 
+    \b
     Args:
         glt_files (list): List of GLT files to stack, in order.
         obs_file_lists (list): List of observation file lists, matching order to glt_files.
@@ -239,6 +240,7 @@ def build_obs_nc(output_file, input_file_list, ignore_file_list, x_resolution, y
     """
     Build a mosaic from the input file.
 
+    \b
     Args:
         output_file (str): Path to the output file.
         input_file_list (str): Path to the input file.
@@ -384,6 +386,7 @@ def apply_glt(glt_file, raw_files, output_file, nodata_value, bands, output_form
     """
     Apply the GLT to the input files.
 
+    \b
     Args:
         glt_file (str): Path to the GLT file.
         raw_files (str): Path to the raw files.

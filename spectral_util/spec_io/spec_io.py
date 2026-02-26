@@ -458,7 +458,7 @@ def open_loc_l1b_rad_nc(input_file, lazy=True, load_glt=False, load_loc=False):
     loc_plus_elev = np.stack([ds_loc['lat'], ds_loc['lon'], ds_loc['elev']], axis = -1)
     
     meta = GenericGeoMetadata([ds_loc['lat'].long_name, ds_loc['lon'].long_name, ds_loc['elev'].long_name], 
-                              trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+                              trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, loc_plus_elev
 
@@ -532,7 +532,7 @@ def open_emit_l2a_mask_nc(input_file, mask_type, lazy=True, load_glt=False, load
     
     mask = np.array(ds[mask_type][...])
     
-    meta = GenericGeoMetadata(mask_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+    meta = GenericGeoMetadata(mask_names, trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, mask
 
@@ -568,7 +568,7 @@ def open_emit_obs_nc(input_file, lazy=True, load_glt=False, load_loc=False):
         logging.warning("Lazy loading not supported for observation data.")
     obs = ds['obs'][...]
     
-    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, obs
 
@@ -670,7 +670,7 @@ def open_airborne_obs(input_file, lazy=True, load_glt=False, load_loc=False):
         logging.warning("Lazy loading not supported for observation data.")
     obs = np.stack([ds['observation_parameters'][on] for on in obs_names], axis=-1)
     
-    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, obs
 

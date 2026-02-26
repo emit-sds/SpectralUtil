@@ -52,6 +52,7 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
     """
     Calculate NDVI.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
@@ -77,6 +78,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     """
     Calculate NBR.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
