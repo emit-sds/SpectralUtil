@@ -3,7 +3,6 @@
 import click
 from .quicklooks import ndvi, rgb, nbr
 from .plotting import plot_basic_overview, plot_pcs
-from .extract import extract_polygon_data, extract_polygon_stats, extract_polygon_to_geojson
 
 @click.group()
 def cli_quicklook():
