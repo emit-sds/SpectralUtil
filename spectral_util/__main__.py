@@ -15,6 +15,7 @@ cli.add_command(ea_assist.cli, name='download')
 cli.add_command(mosaic.cli, name='mosaic')
 cli.add_command(common.cli_quicklook, name='quicklooks')
 cli.add_command(common.cli_plot, name='plot')
+cli.add_command(common.cli_extract, name='extract')
 
 if __name__ == '__main__':
     cli()
