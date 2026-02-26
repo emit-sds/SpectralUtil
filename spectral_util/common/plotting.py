@@ -7,6 +7,7 @@ from spectral_util.spec_io import load_data
 from spectral_util.common.quicklooks import get_rgb
 import matplotlib.pyplot as plt
 from sklearn.cluster import MiniBatchKMeans
+import scipy
 
 def plot_spectra(input_file, n_points=10, method='even', seed=13):
     """
@@ -71,7 +72,6 @@ def plot_spectra(input_file, n_points=10, method='even', seed=13):
     axes[1].set_xlabel("Wavelength")
 
     wl_nan = meta.wavelengths.copy()
-    print(spectra_to_plot[0,:])
     wl_nan[np.isclose(spectra_to_plot[0,:], -0.01, atol=1e-5)] = np.nan
     for i, spec in enumerate(spectra_to_plot):
         axes[1].plot(wl_nan, spec, label=labels[i], c=cmap(i % cmap.N))
@@ -97,6 +97,75 @@ def plot_basic_overview(input_file, output_file, n_points, method):
     if output_file:
         plt.savefig(output_file, bbox_inches='tight', dpi=300)
         click.echo(f"Plot saved to {output_file}")
+
+
+@click.command()
+@click.argument('input_file', type=click.Path(exists=True))
+@click.option('--output_file', '-o', default=None, help='Path to save the plot (if not provided, will display instead)')
+def plot_pcs(input_file, output_file):
+    """
+    Visualizes an image and consistent spectra.
+    """
+    # Click passes None if bands is not provided, handled in function
+    pc_figure(input_file)
+    if output_file:
+        plt.savefig(output_file, bbox_inches='tight', dpi=300)
+        click.echo(f"Plot saved to {output_file}")
+
+
+def build_pca(x):
+    mu = x.mean(axis=0)
+    C = np.cov(x-mu, rowvar=False)
+    [v, d] = scipy.linalg.eigh(C)
+
+    return d, mu
+
+
+def do_pca(x, npca, d, mu, pca_offset=0):
+    # Project, redimension as an image with "npca" channels, and segment
+    if pca_offset == 0:
+        pca = (x - mu) @ d[:, -npca:]
+    else:
+        pca = (x - mu) @ d[:, -(npca+pca_offset):-1*pca_offset]
+    return pca[...,::-1]
+
+
+
+def pc_figure(input_file, start=0, stop=99, seed=13, n_points=10_000):
+    """
+    Plots single pand pcs 
+
+    Args:
+        input_file (str): Path to the input spectral file.
+        start (int): Starting index of the principal components to plot.
+        stop (int): Ending index of the principal components to plot.
+    """
+    np.random.seed(seed)
+    # Load data
+    meta, data = load_data(input_file)
+    build_data = data.copy().reshape((data.shape[0] * data.shape[1], data.shape[2]))
+    build_data = build_data[np.random.permutation(build_data.shape[0])[:n_points],:]
+    d, mu = build_pca(build_data)
+    pca_out = np.zeros((data.shape[0], data.shape[1], stop-start+1))
+    n_pcs = stop - start + 1
+    for _line in range(data.shape[0]):
+        pca_out[_line,...] = do_pca(data[_line,...], n_pcs, d, mu, pca_offset=start)
+    
+    plt.figure(figsize=(10, 10))
+    rows = int(np.ceil(np.sqrt(n_pcs)))
+    cols = int(np.ceil(n_pcs / rows))
+    grid = plt.GridSpec(rows, cols, wspace=0.13, hspace=0.13)
+    for i in range(n_pcs):
+        plt.subplot(grid[i])
+        plt.imshow(pca_out[...,i], vmin=np.percentile(pca_out[...,i], 2), vmax=np.percentile(pca_out[...,i], 98))
+        plt.title(f"PC {start+i}", fontsize=8)
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+
+
 
 if __name__ == '__main__':
     plot_basic_overview()
