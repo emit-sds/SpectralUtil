@@ -9,6 +9,7 @@ Supported products include:
 - AVIRIS-NG L2A Reflectance
 - [EMIT L1B Radiance](https://lpdaac.usgs.gov/products/emitl1bradv001/)
 - [EMIT L2A Reflectance](https://lpdaac.usgs.gov/products/emitl2arflv001/)
+- [PRISM Reflectance](https://daacweb-prod.ornl.gov/BIOSCAPE/guides/BioSCape_PRISM_L2A_RFL.html)
 - ENVI format inputs
 
 ## Installation
