@@ -26,6 +26,24 @@ Or with pip:
 pip install spectral_util
 ```
 
+## Python API
+
+Common IO access patterns - probably the single most useful thing in this repo - are provided acorss datasets. Use:
+```
+from spectral_util.spec_io import load_data
+meta, rfl = load_data('AV320250809t182459_000_L1B_RDN_4842d6a3_RDN.nc')
+print(len(meta.wl))
+print(rfl.shape)
+```
+
+Will return:
+```
+284
+(1280, 1234, 284)
+```
+
+load_data supports options for orthoing nc files that are not natively orthod (e.g. radiance .nc files) during read, and lazy loading (still only partially supported).  All CLI options used below (and more) have supporint api function calls.
+
 ## Running the CLI
 
 If installed into your current environment:
@@ -196,15 +214,7 @@ spectral_util reformat nc-to-envi ./downloads/AV320250809t182459_000_L1B_RDN_484
 spectral_util reformat nc-to-envi ./downloads/AV320250809t182459_000_L1B_RDN_4842d6a3_RDN.nc output_envi --overwrite
 ```
 
-## Python API
 
-For programmatic use:
-
-```python
-from spectral_util.common import quicklooks
-from spectral_util.mosaic import mosaic
-from spectral_util.ea_assist import earthaccess_helpers_AV3, earthaccess_helpers_EMIT
-```
 
 ## Help
 
