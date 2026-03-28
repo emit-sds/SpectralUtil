@@ -319,11 +319,15 @@ def open_netcdf(input_file, lazy=True, load_glt=False, load_loc=False, mask_type
             - numpy.ndarray or netCDF4.Variable: The data, either as a lazy-loaded variable or a fully loaded numpy array.
     """
     input_filename = os.path.basename(input_file)
-    if 'EMIT' in input_filename and 'RAD' in input_filename:
+    if 'emit' in input_filename.lower() and ('rad' in input_filename.lower() or 'rdn' in input_filename.lower()):
         if return_loc_from_l1b_rad_nc:
             return open_loc_l1b_rad_nc(input_file, lazy=lazy, load_glt=load_glt)
         else:
             return open_emit_rdn(input_file, lazy=lazy, load_glt=load_glt)
+            
+    if 'emit' in input_filename.lower() and 'rfl' in input_filename.lower():
+        return open_emit_rfl(input_file, lazy=lazy, load_glt=load_glt)
+
     elif ('emit' in input_filename.lower() and 'obs' in input_filename.lower()):
         return open_emit_obs_nc(input_file, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
     elif ('emit' in input_filename.lower() and 'l2a_mask' in input_filename.lower()):
@@ -343,6 +347,41 @@ def open_netcdf(input_file, lazy=True, load_glt=False, load_loc=False, mask_type
         return open_airborne_rfl(input_file, lazy=lazy)
     else:
         raise ValueError(f'Unknown file type for {input_file}')
+
+
+def open_emit_rfl(input_file, lazy=True, load_glt=False):
+    """
+    Opens an EMIT reflectance NetCDF file and extracts the spectral metadata and reflectance data.
+
+    Args:
+        input_file (str): Path to the NetCDF file.
+        lazy (bool, optional): If True, loads the reflectance data lazily. Defaults to True.
+        load_glt (bool, optional): If True, loads the glt for orthoing. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing:
+            - SpectralMetadata: An object containing the wavelengths and FWHM.
+            - numpy.ndarray or netCDF4.Variable: The reflectance data, either as a lazy-loaded variable or a fully loaded numpy array.
+    """
+    ds = nc.Dataset(input_file)
+    wl = ds['sensor_band_parameters']['wavelengths'][:]
+    fwhm = ds['sensor_band_parameters']['fwhm'][:]
+    trans = ds.geotransform
+    proj = ds.spatial_ref
+    nodata_value = float(ds['reflectance']._FillValue)
+
+    if lazy:
+        rdn = ds['reflectance']
+    else:
+        rdn = np.array(ds['reflectance'][:])
+    
+    glt = None
+    if load_glt:
+        glt = np.stack([ds['location']['glt_x'][:],ds['location']['glt_y'][:]],axis=-1)
+
+    meta = SpectralMetadata(wl, fwhm, trans, proj, glt, pre_orthod=False, nodata_value=nodata_value)
+
+    return meta, rdn
 
 
 def open_emit_rdn(input_file, lazy=True, load_glt=False):
@@ -367,7 +406,7 @@ def open_emit_rdn(input_file, lazy=True, load_glt=False):
     nodata_value = float(ds['radiance']._FillValue)
 
     if lazy:
-        rdn = ds['radiance']
+        rdn = np.array(ds['radiance'][:])
     else:
         rdn = np.array(ds['radiance'][:])
     
@@ -419,7 +458,7 @@ def open_loc_l1b_rad_nc(input_file, lazy=True, load_glt=False, load_loc=False):
     loc_plus_elev = np.stack([ds_loc['lat'], ds_loc['lon'], ds_loc['elev']], axis = -1)
     
     meta = GenericGeoMetadata([ds_loc['lat'].long_name, ds_loc['lon'].long_name, ds_loc['elev'].long_name], 
-                              trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+                              trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, loc_plus_elev
 
@@ -493,7 +532,7 @@ def open_emit_l2a_mask_nc(input_file, mask_type, lazy=True, load_glt=False, load
     
     mask = np.array(ds[mask_type][...])
     
-    meta = GenericGeoMetadata(mask_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+    meta = GenericGeoMetadata(mask_names, trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, mask
 
@@ -529,7 +568,7 @@ def open_emit_obs_nc(input_file, lazy=True, load_glt=False, load_loc=False):
         logging.warning("Lazy loading not supported for observation data.")
     obs = ds['obs'][...]
     
-    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, obs
 
@@ -631,7 +670,7 @@ def open_airborne_obs(input_file, lazy=True, load_glt=False, load_loc=False):
         logging.warning("Lazy loading not supported for observation data.")
     obs = np.stack([ds['observation_parameters'][on] for on in obs_names], axis=-1)
     
-    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=True, nodata_value=nodata_value, loc=loc)
+    meta = GenericGeoMetadata(obs_names, trans, proj, glt=glt, pre_orthod=False, nodata_value=nodata_value, loc=loc)
 
     return meta, obs
 

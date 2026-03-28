@@ -1,13 +1,12 @@
-
+#!/usr/bin/env python3
+"""Quicklooks module for spectral utilities."""
 
 import click
 import numpy as np
-from spec_io import load_data, write_cog
+from spectral_util.spec_io import load_data, write_cog
 
 # Define common arguments
 def common_arguments(f):
-
-    # put this (counter-intuitively) in reverse order
     f = click.argument('output_file')(f)
     f = click.argument('input_file')(f)
     f = click.option('--ortho', is_flag=True, help='Orthorectify the output; only relevant if the input format is non-orthod')(f)
@@ -16,6 +15,32 @@ def common_arguments(f):
 def shared_options(f):
     f = click.option('--ortho', is_flag=True, help='Orthorectify the output; only relevant if the input format is non-orthod')
     return f
+
+def calc_index(data, meta, first_wl, second_wl, first_width=0, second_width=0, nodata=-9999):
+    """
+    Calculate a spectral index.
+    Args:
+        data (numpy like): Input data array.
+        meta (Metadata): Metadata object containing wavelength information.
+        first_wl (int): Wavelength for the first band [nm].
+        second_wl (int): Wavelength for the second band [nm].
+        first_width (int): Width for the first band [nm]; 0 = single wavelength.
+        second_width (int): Width for the second band [nm]; 0 = single wavelength.
+    """
+    first = data[..., meta.wl_index(first_wl, first_width)]
+    second = data[..., meta.wl_index(second_wl, second_width)]
+    if len(first.shape) == 3:
+        first = np.mean(first, axis=-1)
+    if len(second.shape) == 3:
+        second = np.mean(second, axis=-1)
+
+    index = (first - second) / (first + second)
+    index = index.squeeze()
+    index[first == meta.nodata_value] = nodata
+    index[np.isfinite(index) == False] = nodata
+
+    return index
+
 
 @click.command()
 @common_arguments
@@ -27,6 +52,7 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
     """
     Calculate NDVI.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
@@ -38,18 +64,9 @@ def ndvi(input_file, output_file, ortho, red_wl, nir_wl, red_width, nir_width):
     """
     click.echo(f"Running NDVI Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
-
-    red = rfl[..., meta.wl_index(red_wl, red_width)]
-    nir = rfl[..., meta.wl_index(nir_wl, nir_width)]
-
-    ndvi = (nir - red) / (nir + red)
-    ndvi = ndvi.squeeze()
-    ndvi[nir == meta.nodata_value] = -9999
-    ndvi[np.isfinite(ndvi) == False] = -9999
+    ndvi = calc_index(rfl, meta, red_wl, nir_wl, red_width, nir_width)
     ndvi = ndvi.reshape((ndvi.shape[0], ndvi.shape[1], 1))
-
     write_cog(output_file, ndvi, meta, ortho=ortho)
-
 
 @click.command()
 @common_arguments
@@ -61,6 +78,7 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
     """
     Calculate NBR.
 
+    \b
     Args:
         input_file (str): Path to the input file.
         output_file (str): Path to the output file.
@@ -69,22 +87,57 @@ def nbr(input_file, output_file, ortho, nir_wl, swir_wl, nir_width, swir_width):
         swir_wl (int): SWIR band wavelength [nm].
         nir_width (int): NIR band width [nm]; 0 = single wavelength.
         swir_width (int): SWIR band width [nm]; 0 = single wavelength.
-    """  
+    """
 
     click.echo(f"Running NBR Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
-
-    nir = rfl[..., meta.wl_index(nir_wl)]
-    swir = rfl[..., meta.wl_index(swir_wl)]
-
-    nbr = (nir - swir) / (swir + nir)
-    nbr = nbr.squeeze().astype(np.float32)  
-    nbr[nir == meta.nodata_value] = -9999
-    nbr[np.isfinite(nbr) == False] = -9999
+    nbr = calc_index(rfl, meta, nir_wl, swir_wl, nir_width, swir_width)
     nbr = nbr.reshape((nbr.shape[0], nbr.shape[1], 1))
-
     write_cog(output_file, nbr, meta, ortho=ortho, nodata_value=-9999)
 
+
+def get_rgb(rfl, meta, red_wl=650, green_wl=560, blue_wl=460, percentile_stretch=[2,98], scale=[-1,-1,-1,-1,-1,-1]):
+    """
+    Get RGB composite from reflectance data.
+
+    Args:
+        rfl (numpy like): Reflectance data array.
+        meta (Metadata): Metadata object containing wavelength information.
+        red_wl (int): Red band wavelength [nm].
+        green_wl (int): Green band wavelength [nm].
+        blue_wl (int): Blue band wavelength [nm].
+        percentile_stretch [(int), (int)]: Stretch the RGB values to the percentile min & max listed here.  Set to -1, -1 to not stretch.
+        scale [(int), (int), (int), (int), (int), (int)]: Scale the RGB values to the min & max listed here.  Set to -1s to not scale (default).
+
+    Returns:
+        numpy array: RGB composite array.
+
+        IF percentile_stretch or scale is used, return is a uint8, otherwise it is the same dtype as the input reflectance data.
+    """
+    rgb = rfl[..., np.array([meta.wl_index(x) for x in [red_wl, green_wl, blue_wl]])]
+    if percentile_stretch[0] != -1 and percentile_stretch[1] != -1:
+        rgb[rgb == meta.nodata_value] = np.nan
+        rgb -= np.nanpercentile(rgb, percentile_stretch[0], axis=(0, 1))
+        rgb /= np.nanpercentile(rgb, percentile_stretch[1], axis=(0, 1))
+        rgb[rgb < 0] = 0
+        rgb[rgb > 1] = 1
+        mask = np.isfinite(rgb[...,0]) == False
+        rgb[mask,:] = 0
+        rgb = (rgb * 255).astype(np.uint8)
+
+        rgb[rgb == 0] = 1
+        rgb[mask,:] = 0
+    elif np.all(np.array(scale) != -1):
+        mask = rgb[...,0] == meta.nodata_value
+        rgb[...,0] = (np.clip(rgb[...,0], scale[0], scale[1]) - scale[0]) / (scale[1] - scale[0])
+        rgb[...,1] = (np.clip(rgb[...,1], scale[2], scale[3]) - scale[2]) / (scale[3] - scale[2])
+        rgb[...,2] = (np.clip(rgb[...,2], scale[4], scale[5]) - scale[4]) / (scale[5] - scale[4])
+
+        rgb = (rgb * 255).astype(np.uint8)
+        rgb[rgb == 0] = 1
+        rgb[mask,:] = 0
+
+    return rgb
 
 @click.command()
 @common_arguments
@@ -112,54 +165,11 @@ def rgb(input_file, output_file, ortho, red_wl, green_wl, blue_wl, stretch, scal
 
     click.echo(f"Running RGB Calculation on {input_file}")
     meta, rfl = load_data(input_file, lazy=True, load_glt=ortho)
+    rgb = get_rgb(rfl, meta, red_wl, green_wl, blue_wl, stretch, scale)
 
-    rgb = rfl[..., np.array([meta.wl_index(x) for x in [red_wl, green_wl, blue_wl]])]
-    if stretch[0] != -1 and stretch[1] != -1:
-        rgb[rgb == meta.nodata_value] = np.nan
-        rgb -= np.nanpercentile(rgb, stretch[0], axis=(0, 1))
-        rgb /= np.nanpercentile(rgb, stretch[1], axis=(0, 1))
-        rgb[rgb < 0] = 0
-        rgb[rgb > 1] = 1
-        mask = np.isfinite(rgb[...,0]) == False
-        rgb[mask,:] = 0
-        rgb = (rgb * 255).astype(np.uint8)
-
-        rgb[rgb == 0] = 1
-        rgb[mask,:] = 0
+    nodata_value = meta.nodata_value
+    if np.all(np.array(stretch) != -1) or np.all(np.array(scale) != -1):
         nodata_value = 0
-    elif np.all(np.array(scale) != -1):
-        mask = rgb[...,0] == meta.nodata_value
-        rgb[...,0] = (np.clip(rgb[...,0], scale[0], scale[1]) - scale[0]) / (scale[1] - scale[0])
-        rgb[...,1] = (np.clip(rgb[...,1], scale[2], scale[3]) - scale[2]) / (scale[3] - scale[2])
-        rgb[...,2] = (np.clip(rgb[...,2], scale[4], scale[5]) - scale[4]) / (scale[5] - scale[4])
-
-        rgb = (rgb * 255).astype(np.uint8)
-        rgb[rgb == 0] = 1
-        rgb[mask,:] = 0
-
-        nodata_value = 0
-    else:
-        nodata_value = meta.nodata_value
-
 
     write_cog(output_file, rgb, meta, ortho=ortho, nodata_value=nodata_value)
 
-
-
-
-@click.command()
-@common_arguments
-def ndwi(input_file, output_file):
-    click.echo("This doesn't work yet.")
-
-@click.group()
-def cli():
-    pass
-
-cli.add_command(ndvi)
-cli.add_command(nbr)
-cli.add_command(rgb)
-
-
-if __name__ == '__main__':
-    cli()
