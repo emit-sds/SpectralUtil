@@ -102,12 +102,16 @@ def plot_basic_overview(input_file, output_file, n_points, method):
 @click.command()
 @click.argument('input_file', type=click.Path(exists=True))
 @click.option('--output_file', '-o', default=None, help='Path to save the plot (if not provided, will display instead)')
-def plot_pcs(input_file, output_file):
+@click.option('--first_pc', default=0, help='Index of the first principal component to plot')
+@click.option('--last_pc', default=19, help='Index of the last principal component to plot')
+@click.option('--seed', default=13, help='Random seed for PCA sampling')
+@click.option('--n_points', default=10_000, help='Number of points to use for PCA')
+def plot_pcs(input_file, output_file, first_pc, last_pc, seed, n_points):
     """
     Visualizes an image and consistent spectra.
     """
     # Click passes None if bands is not provided, handled in function
-    pc_figure(input_file)
+    pc_figure(input_file, start=first_pc, stop=last_pc, seed=seed, n_points=n_points, show=output_file is None)
     if output_file:
         plt.savefig(output_file, bbox_inches='tight', dpi=300)
         click.echo(f"Plot saved to {output_file}")
@@ -131,7 +135,7 @@ def do_pca(x, npca, d, mu, pca_offset=0):
 
 
 
-def pc_figure(input_file, start=0, stop=99, seed=13, n_points=10_000):
+def pc_figure(input_file, start=0, stop=99, seed=13, n_points=10_000, show=True):
     """
     Plots single pand pcs 
 
@@ -139,6 +143,9 @@ def pc_figure(input_file, start=0, stop=99, seed=13, n_points=10_000):
         input_file (str): Path to the input spectral file.
         start (int): Starting index of the principal components to plot.
         stop (int): Ending index of the principal components to plot.
+        seed (int): Random seed for sampling.
+        n_points (int): Number of points to use for PCA.
+        show (bool): Whether to display the plot immediately.
     """
     np.random.seed(seed)
     # Load data
@@ -161,10 +168,139 @@ def pc_figure(input_file, start=0, stop=99, seed=13, n_points=10_000):
         plt.title(f"PC {start+i}", fontsize=8)
         plt.axis('off')
     plt.tight_layout()
-    plt.show()
+    if show:
+        plt.show()
 
 
 
+
+@click.command()
+@click.argument('input_file', type=click.Path(exists=True))
+@click.option('--output_file', '-o', default=None, help='Path to save the plot (if not provided, will display instead)')
+@click.option('--n_mnf', default=20, help='Number of MNF components to plot')
+@click.option('--seed', default=13, help='Random seed for MNF sampling')
+@click.option('--n_points', default=10_000, help='Number of points to use for MNF')
+@click.option('--diff_dim', default=1, help='Dimension along which to calculate noise differences (0 for rows, 1 for cols)')
+def plot_mnf(input_file, output_file, n_mnf, seed, n_points, diff_dim):
+    """
+    Visualizes an image and consistent spectra.
+    """
+    # Click passes None if bands is not provided, handled in function
+    mnf_figure(input_file, n_mnf, seed=seed, n_points=n_points, show=output_file is None, diff_dim=diff_dim)
+    if output_file:
+        plt.savefig(output_file, bbox_inches='tight', dpi=300)
+        click.echo(f"Plot saved to {output_file}")
+
+def mnf_figure(input_file, n_mnf=20, seed=13, n_points=10_000, show=True, diff_dim=1):
+    """
+    Plots single band mnfs
+
+    Args:
+        input_file (str): Path to the input spectral file.
+        n_mnf (int): Number of MNF components to plot.
+        seed (int): Random seed for sampling.
+        n_points (int): Number of points to use for MNF.
+        show (bool): Whether to display the plot immediately.
+        diff_dim (int): Dimension along which to calculate noise differences (0 for rows, 1 for cols).
+    """
+    np.random.seed(seed)
+    # Load data
+    meta, data = load_data(input_file)
+    mnf_out = calculate_mnf(data, n_mnf=n_mnf, seed=seed, n_points=n_points, diff_dim=diff_dim)
+    n_mnfs = mnf_out.shape[2]
+    
+    plt.figure(figsize=(10, 10))
+    rows = int(np.ceil(np.sqrt(n_mnfs)))
+    cols = int(np.ceil(n_mnfs / rows))
+    grid = plt.GridSpec(rows, cols, wspace=0.13, hspace=0.13)
+    for i in range(n_mnfs):
+        plt.subplot(grid[i])
+        plt.imshow(mnf_out[..., i], vmin=np.percentile(mnf_out[..., i], 2), vmax=np.percentile(mnf_out[..., i], 98))
+        plt.title(f"MNF {i}", fontsize=8)
+        plt.axis('off')
+    plt.tight_layout()
+    if show:
+        plt.show()
+
+
+def calculate_mnf(data, n_mnf=99, seed=13, n_points=10_000, diff_dim=1):
+    """
+    Calculates MNF components for a hyperspectral cube.
+
+    Args:
+        data (ndarray): Spectral cube with shape (rows, cols, bands).
+        n_mnf (int): Number of MNF components to keep.
+        seed (int): Random seed for sampling.
+        n_points (int): Number of pixels used to estimate covariance terms.
+        diff_dim (int): Dimension for shift-difference noise estimate (0 rows, 1 cols).
+    """
+
+    np.random.seed(seed)
+    perm_subset = np.random.permutation(data.shape[0] * data.shape[1])[:n_points]
+    
+    build_data_raw = data.copy().reshape((data.shape[0] * data.shape[1], data.shape[2]))
+    build_data = build_data_raw[perm_subset, :]
+    build_data -= np.mean(build_data, axis=0)  # mean center
+
+    # Estimate noise covariance with a shift-difference method, using either row
+    # or column as specified.
+    if diff_dim == 0:
+        noise_diff = data[:-1, :, :] - data[1:, :, :]
+        if noise_diff.shape[0] < data.shape[0]:
+            noise_diff = np.pad(noise_diff, ((0, 1), (0, 0), (0, 0)), mode='edge')
+    elif diff_dim == 1:
+        noise_diff = data[:, :-1, :] - data[:, 1:, :]
+        if noise_diff.shape[1] < data.shape[1]:
+            noise_diff = np.pad(noise_diff, ((0, 0), (0, 1), (0, 0)), mode='edge')
+    else:
+        raise ValueError("diff_dim must be 0 (rows) or 1 (cols)")
+    
+    noise_diff = noise_diff.reshape((noise_diff.shape[0] * noise_diff.shape[1], noise_diff.shape[2]))
+    noise_diff = noise_diff[perm_subset, :]
+    
+    # Multiply by 0.5 because Var(A-B) = 2*Var(Noise)
+    C_N = np.cov(noise_diff, rowvar=False) * 0.5
+    
+    # Calculate data covariance.
+    C_D = np.cov(build_data, rowvar=False)
+    
+    # Noise whitening transformation.
+    evals_N, evecs_N = np.linalg.eigh(C_N)
+    
+    # Filter out tiny or negative eigenvalues to avoid division by zero
+    tol = 1e-8
+    valid_idx = evals_N > tol
+    evals_N = evals_N[valid_idx]
+    evecs_N = evecs_N[:, valid_idx]
+    
+    # Whitening matrix: W = V_N * Lambda_N^(-1/2)
+    W = evecs_N @ np.diag(1.0 / np.sqrt(evals_N))
+    
+    # Transform the data covariance matrix: C_adj = W^T * C_D * W
+    C_adj = W.T @ C_D @ W
+    
+    # Eigendecomposition of the whitened data covariance.
+    evals_adj, evecs_adj = np.linalg.eigh(C_adj)
+    
+    # Sort descending to place highest SNR components first.
+    sort_idx = np.argsort(evals_adj)[::-1]
+    evals_adj = evals_adj[sort_idx]
+    evecs_adj = evecs_adj[:, sort_idx]
+    
+    # Final transformation matrix.
+    T = W @ evecs_adj
+    
+    # Apply the transformation.
+    mnf_data_flat = build_data_raw @ T
+    
+    # Reshape back to the original image dimensions using retained MNF components.
+    mnf_image = mnf_data_flat.reshape((data.shape[0], data.shape[1], T.shape[1]))
+
+    # filter to top pieces
+    mnf_image = mnf_image[..., :n_mnf] 
+
+    
+    return mnf_image
 
 
 if __name__ == '__main__':
