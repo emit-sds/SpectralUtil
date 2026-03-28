@@ -319,32 +319,34 @@ def open_netcdf(input_file, lazy=True, load_glt=False, load_loc=False, mask_type
             - numpy.ndarray or netCDF4.Variable: The data, either as a lazy-loaded variable or a fully loaded numpy array.
     """
     input_filename = os.path.basename(input_file)
-    if 'emit' in input_filename.lower() and ('rad' in input_filename.lower() or 'rdn' in input_filename.lower()):
+    input_filename_lower = input_filename.lower()
+
+    if 'emit' in input_filename_lower and ('rad' in input_filename_lower or 'rdn' in input_filename_lower):
         if return_loc_from_l1b_rad_nc:
             return open_loc_l1b_rad_nc(input_file, lazy=lazy, load_glt=load_glt)
         else:
             return open_emit_rdn(input_file, lazy=lazy, load_glt=load_glt)
             
-    if 'emit' in input_filename.lower() and 'rfl' in input_filename.lower():
+    if 'emit' in input_filename_lower and 'rfl' in input_filename_lower:
         return open_emit_rfl(input_file, lazy=lazy, load_glt=load_glt)
 
-    elif ('emit' in input_filename.lower() and 'obs' in input_filename.lower()):
+    elif ('emit' in input_filename_lower and 'obs' in input_filename_lower):
         return open_emit_obs_nc(input_file, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
-    elif ('emit' in input_filename.lower() and 'l2a_mask' in input_filename.lower()):
+    elif ('emit' in input_filename_lower and 'l2a_mask' in input_filename_lower):
         return open_emit_l2a_mask_nc(input_file, mask_type, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
-    elif 'AV3' in input_filename and 'RFL' in input_filename:
+
+    is_airborne_like = any(tag in input_filename_lower for tag in ['av3', 'ang', 'prm', 'prism'])
+    if is_airborne_like and 'rfl' in input_filename_lower:
         return open_airborne_rfl(input_file, lazy=lazy)
-    elif 'AV3' in input_filename and 'BANDMASK' in input_filename:
+    elif 'av3' in input_filename_lower and 'bandmask' in input_filename_lower:
         return open_av3_bandmask_nc(input_file, lazy=lazy)
-    elif 'AV3' in input_filename and 'RDN' in input_filename:
+    elif is_airborne_like and 'rdn' in input_filename_lower:
         if return_loc_from_l1b_rad_nc:
             return open_loc_l1b_rad_nc(input_file, lazy=lazy, load_glt=load_glt)
         else:
             return open_airborne_rdn(input_file, lazy=lazy)
-    elif ('av3' in input_filename.lower() or 'ang' in input_filename.lower()) and 'OBS' in input_filename:
+    elif is_airborne_like and 'obs' in input_filename_lower:
         return open_airborne_obs(input_file, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
-    elif 'ang' in input_filename.lower()  and 'rfl' in input_filename.lower():
-        return open_airborne_rfl(input_file, lazy=lazy)
     else:
         raise ValueError(f'Unknown file type for {input_file}')
 
