@@ -406,7 +406,7 @@ def open_emit_rdn(input_file, lazy=True, load_glt=False):
     nodata_value = float(ds['radiance']._FillValue)
 
     if lazy:
-        rdn = ds['radiance']
+        rdn = np.array(ds['radiance'][:])
     else:
         rdn = np.array(ds['radiance'][:])
     
