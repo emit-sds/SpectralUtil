@@ -6,9 +6,11 @@ Supported products include:
 
 - [AVIRIS-3 L1B Radiance](https://doi.org/10.3334/ORNLDAAC/2356)
 - [AVIRIS-3 L2A Reflectance](https://daac.ornl.gov/cgi-bin/dsviewer.pl?ds_id=2357)
+- [AVIRIS-5 L2A Reflectance](https://www.earthdata.nasa.gov/data/catalog/ornl-cloud-av5-l2a-rfl-2484-1#overview)
 - AVIRIS-NG L2A Reflectance
 - [EMIT L1B Radiance](https://lpdaac.usgs.gov/products/emitl1bradv001/)
 - [EMIT L2A Reflectance](https://lpdaac.usgs.gov/products/emitl2arflv001/)
+- [PACE/OCI Surface Reflectance](https://pace.gsfc.nasa.gov/) (preliminary)
 - [PRISM Reflectance](https://daacweb-prod.ornl.gov/BIOSCAPE/guides/BioSCape_PRISM_L2A_RFL.html)
 - ENVI format inputs
 

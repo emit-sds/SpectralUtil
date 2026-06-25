@@ -335,10 +335,13 @@ def open_netcdf(input_file, lazy=True, load_glt=False, load_loc=False, mask_type
     elif ('emit' in input_filename_lower and 'l2a_mask' in input_filename_lower):
         return open_emit_l2a_mask_nc(input_file, mask_type, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
 
-    is_airborne_like = any(tag in input_filename_lower for tag in ['av3', 'ang', 'prm', 'prism'])
+    if 'pace' in input_filename_lower or 'oci' in input_filename_lower:
+        return open_pace_nc(input_file, lazy=lazy, load_glt=load_glt, load_loc=load_loc)
+
+    is_airborne_like = any(tag in input_filename_lower for tag in ['av3', 'av5', 'ang', 'prm', 'prism'])
     if is_airborne_like and 'rfl' in input_filename_lower:
         return open_airborne_rfl(input_file, lazy=lazy)
-    elif 'av3' in input_filename_lower and 'bandmask' in input_filename_lower:
+    elif ('av3' in input_filename_lower or 'av5' in input_filename_lower) and 'bandmask' in input_filename_lower:
         return open_av3_bandmask_nc(input_file, lazy=lazy)
     elif is_airborne_like and 'rdn' in input_filename_lower:
         if return_loc_from_l1b_rad_nc:
@@ -384,6 +387,88 @@ def open_emit_rfl(input_file, lazy=True, load_glt=False):
     meta = SpectralMetadata(wl, fwhm, trans, proj, glt, pre_orthod=False, nodata_value=nodata_value)
 
     return meta, rdn
+
+
+def open_pace_nc(input_file, lazy=True, load_glt=False, load_loc=False):
+    """
+    Opens a PACE NetCDF file and extracts the spectral metadata and data.
+
+    Args:
+        input_file (str): Path to the NetCDF file.
+        lazy (bool, optional): If True, loads the data lazily. Defaults to True.
+        load_glt (bool, optional): If True, loads the glt for orthoing. Defaults to False.
+        load_loc (bool, optional): If True, loads the loc and stores it in the meta data. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing:
+            - SpectralMetadata: An object containing the wavelengths and FWHM.
+            - numpy.ndarray or netCDF4.Variable: The data, either as a lazy-loaded variable or a fully loaded numpy array.
+    """
+    ds = nc.Dataset(input_file)
+    
+    # Identify data variable (PACE usually uses 'observation_data' group)
+    data_var = None
+    if 'geophysical_data' in ds.groups:
+        obs_group = ds['geophysical_data']
+        for var in ['Rrs', 'rad', 'radiance', 'reflectance', 'rhos']:
+            if var in obs_group.variables:
+                data_var = obs_group[var]
+                break
+                
+    # Fallback to root variables if no observation_data group
+    if data_var is None:
+        for var in ['Rrs', 'rad', 'radiance', 'reflectance', 'rhos']:
+            if var in ds.variables:
+                data_var = ds[var]
+                break
+                
+    if data_var is None:
+        raise ValueError("Could not find standard PACE data variables (Rrs, rad, radiance, reflectance) in file.")
+
+    # Attempt to pull wavelengths
+    wl, fwhm = None, None
+    if 'sensor_band_parameters' in ds.groups:
+        sbp = ds['sensor_band_parameters']
+        if 'wavelength_3d' in sbp.variables:
+            wl = sbp['wavelength_3d'][:]
+        if 'fwhm' in sbp.variables:
+            fwhm = sbp['fwhm'][:]
+
+    # Handle loc/glt
+    loc = None
+    glt = None
+    if load_loc or load_glt:
+        for geo_group_name in ['geolocation_data', 'navigation_data', 'sensor_views_bands']:
+            if geo_group_name in ds.groups:
+                geo = ds[geo_group_name]
+                if 'longitude' in geo.variables and 'latitude' in geo.variables:
+                    if load_loc:
+                        loc = np.stack([geo['longitude'][:], geo['latitude'][:]], axis=-1)
+                    break
+                elif 'lon' in geo.variables and 'lat' in geo.variables:
+                    if load_loc:
+                        loc = np.stack([geo['lon'][:], geo['lat'][:]], axis=-1)
+                    break
+
+    nodata_value = getattr(data_var, '_FillValue', -9999)
+
+    if lazy:
+        data = data_var
+    else:
+        data = np.array(data_var[:])
+        
+    # Transpose if data shape is (bands, rows, cols) to match standard (rows, cols, bands)
+    if len(data.shape) == 3 and data.shape[0] < data.shape[1] and data.shape[0] < data.shape[2]:
+        if not lazy:
+            data = np.transpose(data, (1, 2, 0))
+        else:
+            logging.warning("PACE data appears to be (bands, rows, cols). Lazy loading is enabled, so data remains untransposed.")
+
+    meta = SpectralMetadata(wl, fwhm, geotransform=None, projection=None, glt=glt, pre_orthod=False, nodata_value=nodata_value)
+    if loc is not None:
+        meta.loc = loc
+
+    return meta, data
 
 
 def open_emit_rdn(input_file, lazy=True, load_glt=False):
@@ -587,7 +672,7 @@ def open_airborne_rfl(input_file, lazy=True):
             - SpectralMetadata: An object containing the wavelengths and FWHM.
             - numpy.ndarray or netCDF4.Variable: The reflectance data, either as a lazy-loaded variable or a fully loaded numpy array.
     """
-    ds = nc.Dataset(input_file)
+    ds = nc.Dataset(input_file, 'r', format='NETCDF4')
     wl = ds['reflectance']['wavelength'][:]
     fwhm = ds['reflectance']['fwhm'][:]
     proj = ds.variables['transverse_mercator'].spatial_ref
@@ -752,8 +837,10 @@ def create_envi_file(output_file, data_shape, meta, dtype=np.dtype(np.float32)):
     driver = gdal.GetDriverByName('ENVI')
     driver.Register()
     outDataset = driver.Create(output_file, data_shape[1], data_shape[0], data_shape[2], numpy_to_gdal[dtype], options=['INTERLEAVE=BIL'])
-    outDataset.SetGeoTransform(meta.geotransform)
-    outDataset.SetProjection(meta.projection)
+    if meta.geotransform is not None:
+        outDataset.SetGeoTransform(meta.geotransform)
+    if meta.projection is not None:
+        outDataset.SetProjection(meta.projection)
     del outDataset
 
 
